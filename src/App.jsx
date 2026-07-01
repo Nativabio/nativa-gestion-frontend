@@ -6,22 +6,21 @@ function App() {
   useEffect(() => {
     fetch("https://nativa-gestion.onrender.com/dashboard")
       .then((res) => res.json())
-      .then((data) => setData(data))
-      .catch((err) => console.log(err));
+      .then((data) => setData(data));
   }, []);
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>📊 Nativa Gestión</h1>
+    <div style={{ padding: 30, fontFamily: "Arial", background: "#f4f4f4", minHeight: "100vh" }}>
+      <h1>📊 Nativa Gestión</h1>
 
       {!data ? (
-        <p>Cargando datos...</p>
+        <p>Cargando...</p>
       ) : (
-        <div style={styles.grid}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
           <Card title="Sales" value={data.sales} color="#4f46e5" />
-          Card title="Production" value={data.production} color="#16a34a" />
-          Card title="Profit" value={data.profit} color="#f59e0b" />
-          Card title="Stock Alerts" value={data.stock_alerts} color="#ef4444" />
+          <Card title="Production" value={data.production} color="#16a34a" />
+          <Card title="Profit" value={data.profit} color="#f59e0b" />
+          <Card title="Stock Alerts" value={data.stock_alerts} color="#ef4444" />
         </div>
       )}
     </div>
@@ -30,38 +29,11 @@ function App() {
 
 function Card({ title, value, color }) {
   return (
-    <div style={{ ...styles.card, borderLeft: `6px solid ${color}` }}>
+    <div style={{ background: "white", padding: 20, borderRadius: 10, borderLeft: `6px solid ${color}` }}>
       <h3>{title}</h3>
-      <p style={styles.value}>{value}</p>
+      <p style={{ fontSize: 28, fontWeight: "bold" }}>{value}</p>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    padding: 30,
-    fontFamily: "Arial",
-    background: "#f4f4f4",
-    minHeight: "100vh",
-  },
-  title: {
-    marginBottom: 20,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: 20,
-  },
-  card: {
-    background: "white",
-    padding: 20,
-    borderRadius: 10,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
-  },
-  value: {
-    fontSize: 28,
-    fontWeight: "bold",
-  },
-};
 
 export default App;
