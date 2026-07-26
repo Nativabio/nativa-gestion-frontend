@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PurchaseHistory from "./PurchaseHistory";
 
 const API = "http://127.0.0.1:8000";
@@ -15,6 +15,7 @@ export default function Purchases() {
     );
 
     const [paymentMethod, setPaymentMethod] = useState("Caja");
+    const [shippingCost, setShippingCost] = useState(0);
     const [materials, setMaterials] = useState([]);
     const [selectedMaterial, setSelectedMaterial] = useState("");
     const [items, setItems] = useState([]);
@@ -60,7 +61,11 @@ export default function Purchases() {
 
         const data = await response.json();
 
-        setMaterials(data);
+        setMaterials(
+            Array.isArray(data)
+                ? data
+                : []
+        );
 
     }
 
@@ -73,7 +78,11 @@ export default function Purchases() {
 
         const data = await response.json();
 
-        setSuppliers(data);
+        setSuppliers(
+            Array.isArray(data)
+                ? data
+                : []
+        );
 
     }
 
@@ -93,11 +102,102 @@ export default function Purchases() {
             ...items,
             {
                 ...material,
-                quantity: 1
+                quantity: 1,
+                cost: 0
             }
         ]);
 
         setSelectedMaterial("");
+
+    }
+
+
+    function updateItem(index, field, value) {
+
+        setItems((currentItems) =>
+            currentItems.map((item, itemIndex) =>
+                itemIndex === index
+                    ? {
+                        ...item,
+                        [field]: Number(value)
+                    }
+                    : item
+            )
+        );
+
+    }
+
+
+    function removeItem(index) {
+
+        setItems((currentItems) =>
+            currentItems.filter(
+                (_, itemIndex) =>
+                    itemIndex !== index
+            )
+        );
+
+    }
+
+
+    const materialsSubtotal = useMemo(
+        () =>
+            items.reduce(
+                (sum, item) =>
+                    sum + Number(item.cost || 0),
+                0
+            ),
+        [items]
+    );
+
+
+    const shipping = Math.max(
+        Number(shippingCost || 0),
+        0
+    );
+
+
+    function shippingShare(item) {
+
+        if (
+            shipping <= 0
+            ||
+            materialsSubtotal <= 0
+        ) {
+
+            return 0;
+
+        }
+
+        return (
+            shipping
+            *
+            Number(item.cost || 0)
+            /
+            materialsSubtotal
+        );
+
+    }
+
+
+    const purchaseTotal = (
+        materialsSubtotal
+        +
+        shipping
+    );
+
+
+    function formatMoney(value) {
+
+        return Number(value || 0).toLocaleString(
+            "es-AR",
+            {
+                style: "currency",
+                currency: "ARS",
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }
+        );
 
     }
 
@@ -118,11 +218,22 @@ export default function Purchases() {
 
         }
 
-        const total = items.reduce(
-            (sum, item) =>
-                sum + Number(item.cost),
-            0
+        const invalidItem = items.find(
+            (item) =>
+                Number(item.quantity || 0) <= 0
+                ||
+                Number(item.cost || 0) < 0
         );
+
+        if (invalidItem) {
+
+            alert(
+                "Revisá las cantidades y los precios de la compra"
+            );
+
+            return;
+
+        }
 
         const response = await fetch(
             `${API}/purchases`,
@@ -135,7 +246,12 @@ export default function Purchases() {
                     supplier: supplier,
                     date: date,
                     payment_method: paymentMethod,
-                    total: total
+                    total: purchaseTotal,
+                    notes: (
+                        shipping > 0
+                            ? `Costo de envío: ${shipping}`
+                            : ""
+                    )
                 })
             }
         );
@@ -165,9 +281,17 @@ export default function Purchases() {
                     purchase_id: purchase.id,
 
                     items: items.map((item) => ({
+
                         raw_material_id: item.id,
-                        quantity: item.quantity,
-                        price: item.cost
+
+                        quantity:
+                            Number(item.quantity || 0),
+
+                        price:
+                            Number(item.cost || 0)
+                            +
+                            shippingShare(item)
+
                     }))
 
                 })
@@ -194,6 +318,7 @@ export default function Purchases() {
         setItems([]);
         setSupplier("");
         setPaymentMethod("Caja");
+        setShippingCost(0);
 
         await loadMaterials();
         await loadNextPurchaseNumber();
@@ -212,301 +337,329 @@ export default function Purchases() {
 
             <h2>🛒 Compras</h2>
 
-            <div
-                style={{
-                    border: "1px solid #ddd",
-                    borderRadius: 10,
-                    padding: 20,
-                    marginTop: 20
-                }}
-            >
+            <div style={styles.card}>
 
-                <h3>Nueva Compra</h3>
+                <h3 style={styles.sectionTitle}>
+                    Nueva Compra
+                </h3>
 
-                <label>Número de compra</label>
+                <div style={styles.formGrid}>
 
-                <br />
+                    <div>
 
-                <input
-                    value={purchaseNumber}
-                    disabled
-                    style={{
-                        width: 120,
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                />
+                        <label>Número de compra</label>
 
-                <div
-                    style={{
-                        marginTop: 5,
-                        fontSize: 12,
-                        color: "#666"
-                    }}
-                >
-                    El número se asigna automáticamente y no se repite.
-                </div>
+                        <input
+                            value={purchaseNumber}
+                            disabled
+                            style={styles.input}
+                        />
 
-                <br />
+                        <div style={styles.helpText}>
+                            Se asigna automáticamente.
+                        </div>
 
-                <label>Proveedor</label>
+                    </div>
 
-                <br />
+                    <div>
 
-                <select
-                    value={supplier}
-                    onChange={(e) =>
-                        setSupplier(
-                            e.target.value
-                        )
-                    }
-                    style={{
-                        width: 320,
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                >
+                        <label>Proveedor</label>
 
-                    <option value="">
-                        Seleccionar proveedor
-                    </option>
-
-                    {
-
-                        suppliers.map((sup) => (
-
-                            <option
-                                key={sup.id}
-                                value={sup.id}
-                            >
-                                {sup.name}
-                            </option>
-
-                        ))
-
-                    }
-
-                </select>
-
-                <br /><br />
-
-                <label>Fecha</label>
-
-                <br />
-
-                <input
-                    type="date"
-                    value={date}
-                    onChange={(e) =>
-                        setDate(
-                            e.target.value
-                        )
-                    }
-                    style={{
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                />
-
-                <br /><br />
-
-                <label>Medio de pago</label>
-
-                <br />
-
-                <select
-                    value={paymentMethod}
-                    onChange={(e) =>
-                        setPaymentMethod(
-                            e.target.value
-                        )
-                    }
-                    style={{
-                        width: 320,
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                >
-
-                    <option value="Caja">Caja</option>
-                    <option value="Banco">Banco</option>
-                    <option value="Mercado Pago">Mercado Pago</option>
-                    <option value="Proveedores">
-                        Proveedores / cuenta corriente
-                    </option>
-
-                </select>
-
-                <hr style={{ margin: "25px 0" }} />
-
-                <h3>Materias primas</h3>
-
-                <select
-                    value={selectedMaterial}
-                    onChange={(e) =>
-                        setSelectedMaterial(
-                            e.target.value
-                        )
-                    }
-                    style={{
-                        width: 350,
-                        padding: 8
-                    }}
-                >
-
-                    <option value="">
-                        Seleccionar materia prima
-                    </option>
-
-                    {
-
-                        materials.map((material) => (
-
-                            <option
-                                key={material.id}
-                                value={material.id}
-                            >
-                                {material.name}
-                            </option>
-
-                        ))
-
-                    }
-
-                </select>
-
-                <button
-                    onClick={addMaterial}
-                    style={{
-                        marginLeft: 10
-                    }}
-                >
-                    ➕ Agregar materia prima
-                </button>
-
-                <hr />
-
-                <h3>Materias primas agregadas</h3>
-
-                {
-
-                    items.length === 0 && (
-                        <p>No hay materias primas agregadas.</p>
-                    )
-
-                }
-
-                {
-
-                    items.map((item, index) => (
-
-                        <div
-                            key={index}
-                            style={{
-                                border: "1px solid #ddd",
-                                borderRadius: 8,
-                                padding: 15,
-                                marginBottom: 10
-                            }}
+                        <select
+                            value={supplier}
+                            onChange={(e) =>
+                                setSupplier(
+                                    e.target.value
+                                )
+                            }
+                            style={styles.input}
                         >
 
-                            <h4>{item.name}</h4>
+                            <option value="">
+                                Seleccionar proveedor
+                            </option>
+
+                            {
+                                suppliers.map((sup) => (
+
+                                    <option
+                                        key={sup.id}
+                                        value={sup.id}
+                                    >
+                                        {sup.name}
+                                    </option>
+
+                                ))
+                            }
+
+                        </select>
+
+                    </div>
+
+                    <div>
+
+                        <label>Fecha</label>
+
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) =>
+                                setDate(
+                                    e.target.value
+                                )
+                            }
+                            style={styles.input}
+                        />
+
+                    </div>
+
+                    <div>
+
+                        <label>Forma de pago</label>
+
+                        <select
+                            value={paymentMethod}
+                            onChange={(e) =>
+                                setPaymentMethod(
+                                    e.target.value
+                                )
+                            }
+                            style={styles.input}
+                        >
+
+                            <option value="Caja">
+                                Efectivo / Caja
+                            </option>
+
+                            <option value="Banco">
+                                Transferencia / Banco
+                            </option>
+
+                            <option value="Mercado Pago">
+                                Mercado Pago
+                            </option>
+
+                            <option value="Proveedores">
+                                Cuenta corriente
+                            </option>
+
+                        </select>
+
+                    </div>
+
+                    <div>
+
+                        <label>Costo de envío</label>
+
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={shippingCost}
+                            onChange={(e) =>
+                                setShippingCost(
+                                    Number(e.target.value)
+                                )
+                            }
+                            style={styles.input}
+                        />
+
+                        <div style={styles.helpText}>
+                            Se prorratea según el precio de cada materia prima.
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <hr style={styles.separator} />
+
+
+                <div style={styles.addRow}>
+
+                    <select
+                        value={selectedMaterial}
+                        onChange={(e) =>
+                            setSelectedMaterial(
+                                e.target.value
+                            )
+                        }
+                        style={{
+                            ...styles.input,
+                            width: 350,
+                            maxWidth: "100%"
+                        }}
+                    >
+
+                        <option value="">
+                            Seleccionar materia prima
+                        </option>
+
+                        {
+                            materials.map((material) => (
+
+                                <option
+                                    key={material.id}
+                                    value={material.id}
+                                >
+                                    {material.name}
+                                </option>
+
+                            ))
+                        }
+
+                    </select>
+
+                    <button
+                        onClick={addMaterial}
+                        style={styles.addButton}
+                    >
+                        ➕ Agregar
+                    </button>
+
+                </div>
+
+
+                <div style={styles.itemsHeader}>
+
+                    <div>Materia prima</div>
+                    <div>Cantidad</div>
+                    <div>Precio comprado</div>
+                    <div>Envío asignado</div>
+                    <div>Costo final</div>
+                    <div></div>
+
+                </div>
+
+
+                {
+                    items.length === 0 && (
+
+                        <p style={styles.emptyText}>
+                            No hay materias primas agregadas.
+                        </p>
+
+                    )
+                }
+
+
+                {
+                    items.map((item, index) => {
+
+                        const allocatedShipping =
+                            shippingShare(item);
+
+                        const finalCost =
+                            Number(item.cost || 0)
+                            +
+                            allocatedShipping;
+
+                        return (
 
                             <div
-                                style={{
-                                    display: "flex",
-                                    gap: 20
-                                }}
+                                key={`${item.id}-${index}`}
+                                style={styles.itemRow}
                             >
 
-                                <div>
-
-                                    <label>Cantidad</label>
-
-                                    <br />
-
-                                    <input
-                                        type="number"
-                                        value={item.quantity}
-                                        onChange={(e) => {
-
-                                            const copy = [...items];
-
-                                            copy[index].quantity =
-                                                Number(e.target.value);
-
-                                            setItems(copy);
-
-                                        }}
-                                        style={{
-                                            width: 100
-                                        }}
-                                    />
-
+                                <div style={styles.itemName}>
+                                    {item.name}
+                                    <span style={styles.unitText}>
+                                        {item.unit
+                                            ? ` (${item.unit})`
+                                            : ""}
+                                    </span>
                                 </div>
 
-                                <div>
+                                <input
+                                    type="number"
+                                    min="0.0001"
+                                    step="any"
+                                    value={item.quantity}
+                                    onChange={(e) =>
+                                        updateItem(
+                                            index,
+                                            "quantity",
+                                            e.target.value
+                                        )
+                                    }
+                                    style={styles.compactInput}
+                                />
 
-                                    <label>Precio total</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={item.cost}
+                                    onChange={(e) =>
+                                        updateItem(
+                                            index,
+                                            "cost",
+                                            e.target.value
+                                        )
+                                    }
+                                    style={styles.compactInput}
+                                />
 
-                                    <br />
-
-                                    <input
-                                        type="number"
-                                        value={item.cost}
-                                        onChange={(e) => {
-
-                                            const copy = [...items];
-
-                                            copy[index].cost =
-                                                Number(e.target.value);
-
-                                            setItems(copy);
-
-                                        }}
-                                        style={{
-                                            width: 120
-                                        }}
-                                    />
-
+                                <div style={styles.moneyCell}>
+                                    {formatMoney(
+                                        allocatedShipping
+                                    )}
                                 </div>
 
-                                <div>
-
-                                    <label>Subtotal</label>
-
-                                    <br />
-
-                                    <b>
-                                        ${Number(item.cost || 0).toFixed(2)}
-                                    </b>
-
+                                <div style={styles.totalCell}>
+                                    {formatMoney(finalCost)}
                                 </div>
+
+                                <button
+                                    onClick={() =>
+                                        removeItem(index)
+                                    }
+                                    style={styles.removeButton}
+                                    title="Quitar materia prima"
+                                >
+                                    ✕
+                                </button>
 
                             </div>
 
-                        </div>
+                        );
 
-                    ))
-
+                    })
                 }
 
-                <hr />
 
-                <h2>
-                    Total: $
-                    {
-                        items
-                            .reduce(
-                                (sum, item) =>
-                                    sum + Number(item.cost || 0),
-                                0
-                            )
-                            .toFixed(2)
-                    }
-                </h2>
+                <div style={styles.summary}>
 
-                <button onClick={savePurchase}>
+                    <div>
+                        Materias primas:
+                        {" "}
+                        <strong>
+                            {formatMoney(materialsSubtotal)}
+                        </strong>
+                    </div>
+
+                    <div>
+                        Envío:
+                        {" "}
+                        <strong>
+                            {formatMoney(shipping)}
+                        </strong>
+                    </div>
+
+                    <div style={styles.grandTotal}>
+                        Total:
+                        {" "}
+                        {formatMoney(purchaseTotal)}
+                    </div>
+
+                </div>
+
+
+                <button
+                    onClick={savePurchase}
+                    style={styles.saveButton}
+                >
                     💾 Guardar Compra
                 </button>
 
@@ -521,3 +674,147 @@ export default function Purchases() {
     );
 
 }
+
+
+const styles = {
+
+    card: {
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        padding: 18,
+        marginTop: 16
+    },
+
+    sectionTitle: {
+        marginTop: 0,
+        marginBottom: 15
+    },
+
+    formGrid: {
+        display: "grid",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(190px, 1fr))",
+        gap: 12,
+        alignItems: "start"
+    },
+
+    input: {
+        display: "block",
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "7px 8px",
+        marginTop: 4
+    },
+
+    compactInput: {
+        width: "100%",
+        minWidth: 90,
+        boxSizing: "border-box",
+        padding: "6px 7px"
+    },
+
+    helpText: {
+        marginTop: 4,
+        fontSize: 11,
+        color: "#666"
+    },
+
+    separator: {
+        margin: "18px 0"
+    },
+
+    addRow: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap",
+        marginBottom: 14
+    },
+
+    addButton: {
+        padding: "7px 12px",
+        cursor: "pointer"
+    },
+
+    itemsHeader: {
+        display: "grid",
+        gridTemplateColumns:
+            "minmax(180px, 2fr) 100px 130px 130px 130px 38px",
+        gap: 8,
+        alignItems: "center",
+        padding: "7px 9px",
+        borderBottom: "2px solid #ddd",
+        fontSize: 12,
+        fontWeight: "bold",
+        background: "#f7f7f7",
+        overflowX: "auto"
+    },
+
+    itemRow: {
+        display: "grid",
+        gridTemplateColumns:
+            "minmax(180px, 2fr) 100px 130px 130px 130px 38px",
+        gap: 8,
+        alignItems: "center",
+        padding: "7px 9px",
+        borderBottom: "1px solid #eee",
+        minWidth: 720
+    },
+
+    itemName: {
+        fontWeight: "bold"
+    },
+
+    unitText: {
+        fontSize: 12,
+        fontWeight: "normal",
+        color: "#666"
+    },
+
+    moneyCell: {
+        fontSize: 13,
+        textAlign: "right"
+    },
+
+    totalCell: {
+        fontSize: 13,
+        fontWeight: "bold",
+        textAlign: "right"
+    },
+
+    removeButton: {
+        border: "none",
+        background: "transparent",
+        color: "#b00020",
+        fontSize: 18,
+        cursor: "pointer"
+    },
+
+    emptyText: {
+        margin: "14px 0",
+        color: "#666"
+    },
+
+    summary: {
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 20,
+        alignItems: "center",
+        flexWrap: "wrap",
+        marginTop: 16,
+        paddingTop: 12,
+        borderTop: "1px solid #ddd"
+    },
+
+    grandTotal: {
+        fontSize: 20,
+        fontWeight: "bold"
+    },
+
+    saveButton: {
+        marginTop: 16,
+        padding: "9px 16px",
+        cursor: "pointer"
+    }
+
+};
