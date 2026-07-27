@@ -439,6 +439,10 @@ export default function Purchases() {
                                 Mercado Pago
                             </option>
 
+                            <option value="Tarjeta">
+                                Tarjeta de crédito
+                            </option>
+
                             <option value="Proveedores">
                                 Cuenta corriente
                             </option>

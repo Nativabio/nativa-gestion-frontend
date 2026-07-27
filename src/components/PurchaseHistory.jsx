@@ -3,74 +3,43 @@ import { useEffect, useState } from "react";
 const API = "http://127.0.0.1:8000";
 
 export default function PurchaseHistory() {
-
     const [purchases, setPurchases] = useState([]);
-
     const [loading, setLoading] = useState(true);
-
     const [error, setError] = useState("");
 
-
     useEffect(() => {
-
         loadPurchases();
-
     }, []);
 
-
     async function loadPurchases() {
-
         setLoading(true);
-
         setError("");
 
         try {
-
-            const response = await fetch(
-                `${API}/purchases`
-            );
-
+            const response = await fetch(`${API}/purchases`);
             const data = await response.json();
 
             if (!response.ok || data.error) {
-
                 throw new Error(
                     data.error ||
                     "No se pudo cargar el historial de compras"
                 );
-
             }
 
-            setPurchases(
-                Array.isArray(data)
-                    ? data
-                    : []
-            );
-
+            setPurchases(Array.isArray(data) ? data : []);
         } catch (err) {
-
             setError(err.message);
-
         } finally {
-
             setLoading(false);
-
         }
-
     }
 
-
     async function deletePurchase(id) {
-
         const confirmed = window.confirm(
             "¿Eliminar esta compra?"
         );
 
-        if (!confirmed) {
-
-            return;
-
-        }
+        if (!confirmed) return;
 
         const response = await fetch(
             `${API}/purchases/${id}`,
@@ -82,25 +51,18 @@ export default function PurchaseHistory() {
         const data = await response.json();
 
         if (!response.ok || data.error) {
-
             alert(
                 data.error ||
                 "No se pudo eliminar la compra"
             );
-
             return;
-
         }
 
         alert("Compra eliminada");
-
         await loadPurchases();
-
     }
 
-
     function formatMoney(value) {
-
         return Number(value || 0).toLocaleString(
             "es-AR",
             {
@@ -110,92 +72,80 @@ export default function PurchaseHistory() {
                 maximumFractionDigits: 2
             }
         );
-
     }
 
-
     function formatNumber(value) {
-
         return Number(value || 0).toLocaleString(
             "es-AR",
             {
                 maximumFractionDigits: 3
             }
         );
-
     }
 
-
     function formatDate(value) {
+        const normalized = String(value || "").substring(0, 10);
 
-        const normalized = String(
-            value || ""
-        ).substring(0, 10);
-
-        if (!normalized) {
-
-            return "";
-
-        }
+        if (!normalized) return "";
 
         const parts = normalized.split("-");
 
-        if (parts.length !== 3) {
-
-            return normalized;
-
-        }
+        if (parts.length !== 3) return normalized;
 
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
-
     }
-
 
     function purchaseDetail(purchase) {
+        const materialItems = (
+            purchase.items || []
+        ).map((item) => {
+            const unit = item.unit
+                ? ` ${item.unit}`
+                : "";
 
-        const items = purchase.items || [];
+            return (
+                `${item.name} `
+                +
+                `(${formatNumber(item.quantity)}${unit})`
+            );
+        });
 
-        if (items.length === 0) {
+        const extraItems = (
+            purchase.extra_items || []
+        ).map((item) => {
+            const category = item.category
+                ? ` · ${item.category}`
+                : "";
 
-            return "Sin detalle";
+            return (
+                `${item.name} `
+                +
+                `(${formatNumber(item.quantity)})`
+                +
+                category
+            );
+        });
 
-        }
+        const detail = [
+            ...materialItems,
+            ...extraItems
+        ];
 
-        return items
-            .map((item) => {
-
-                const unit = item.unit
-                    ? ` ${item.unit}`
-                    : "";
-
-                return (
-                    `${item.name} `
-                    +
-                    `(${formatNumber(item.quantity)}${unit})`
-                );
-
-            })
-            .join(" · ");
-
+        return detail.length === 0
+            ? "Sin detalle"
+            : detail.join(" · ");
     }
 
-
     return (
-
         <div style={styles.container}>
-
             <div style={styles.header}>
-
                 <div>
-
                     <h2 style={styles.title}>
                         📋 Historial de Compras
                     </h2>
-
                     <p style={styles.subtitle}>
                         Compras registradas, ordenadas desde la más reciente.
                     </p>
-
                 </div>
 
                 <button
@@ -204,191 +154,105 @@ export default function PurchaseHistory() {
                 >
                     🔄 Actualizar
                 </button>
-
             </div>
 
-
-            {
-
-                loading && (
-
-                    <p>Cargando compras...</p>
-
-                )
-
-            }
-
-
-            {
-
-                error && (
-
-                    <div style={styles.errorBox}>
-                        {error}
-                    </div>
-
-                )
-
-            }
-
-
-            {
-
-                !loading &&
-                !error &&
-                purchases.length === 0 && (
-
-                    <p>No hay compras registradas.</p>
-
-                )
-
-            }
-
-
-            {
-
-                !loading &&
-                !error &&
-                purchases.length > 0 && (
-
-                    <div style={styles.tableWrapper}>
-
-                        <table style={styles.table}>
-
-                            <thead>
-
-                                <tr>
-
-                                    <th style={styles.th}>
-                                        Compra
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Fecha
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Proveedor
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Detalle
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Pago
-                                    </th>
-
-                                    <th style={styles.thRight}>
-                                        Total
-                                    </th>
-
-                                    <th style={styles.thCenter}>
-                                        Acción
-                                    </th>
-
-                                </tr>
-
-                            </thead>
-
-                            <tbody>
-
-                                {
-
-                                    purchases.map((purchase) => {
-
-                                        const detail = purchaseDetail(
-                                            purchase
-                                        );
-
-                                        return (
-
-                                            <tr key={purchase.id}>
-
-                                                <td style={styles.tdStrong}>
-
-                                                    {purchase.number}
-
-                                                    {
-
-                                                        purchase.invoice_number && (
-
-                                                            <div style={styles.secondaryText}>
-                                                                Factura: {purchase.invoice_number}
-                                                            </div>
-
-                                                        )
-
-                                                    }
-
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {formatDate(purchase.date)}
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {purchase.supplier || "Sin proveedor"}
-                                                </td>
-
-                                                <td
-                                                    style={styles.detailCell}
-                                                    title={detail}
-                                                >
-                                                    {detail}
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {purchase.payment_method || "Caja"}
-                                                </td>
-
-                                                <td style={styles.tdRight}>
-                                                    {formatMoney(purchase.total)}
-                                                </td>
-
-                                                <td style={styles.tdCenter}>
-
-                                                    <button
-                                                        onClick={() =>
-                                                            deletePurchase(
-                                                                purchase.id
-                                                            )
-                                                        }
-                                                        style={styles.deleteButton}
-                                                        title="Eliminar compra"
-                                                    >
-                                                        🗑️ Eliminar
-                                                    </button>
-
-                                                </td>
-
-                                            </tr>
-
-                                        );
-
-                                    })
-
-                                }
-
-                            </tbody>
-
-                        </table>
-
-                    </div>
-
-                )
-
-            }
-
+            {loading && <p>Cargando compras...</p>}
+
+            {error && (
+                <div style={styles.errorBox}>
+                    {error}
+                </div>
+            )}
+
+            {!loading && !error && purchases.length === 0 && (
+                <p>No hay compras registradas.</p>
+            )}
+
+            {!loading && !error && purchases.length > 0 && (
+                <div style={styles.tableWrapper}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th style={styles.th}>Compra</th>
+                                <th style={styles.th}>Fecha</th>
+                                <th style={styles.th}>Proveedor</th>
+                                <th style={styles.th}>Detalle</th>
+                                <th style={styles.th}>Pago</th>
+                                <th style={styles.thRight}>Envío</th>
+                                <th style={styles.thRight}>Total</th>
+                                <th style={styles.thCenter}>Acción</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {purchases.map((purchase) => {
+                                const detail =
+                                    purchaseDetail(purchase);
+
+                                return (
+                                    <tr key={purchase.id}>
+                                        <td style={styles.tdStrong}>
+                                            {purchase.number}
+
+                                            {purchase.invoice_number && (
+                                                <div style={styles.secondaryText}>
+                                                    Factura: {purchase.invoice_number}
+                                                </div>
+                                            )}
+                                        </td>
+
+                                        <td style={styles.td}>
+                                            {formatDate(purchase.date)}
+                                        </td>
+
+                                        <td style={styles.td}>
+                                            {purchase.supplier || "Sin proveedor"}
+                                        </td>
+
+                                        <td
+                                            style={styles.detailCell}
+                                            title={detail}
+                                        >
+                                            {detail}
+                                        </td>
+
+                                        <td style={styles.td}>
+                                            {purchase.payment_method || "Caja"}
+                                        </td>
+
+                                        <td style={styles.tdRight}>
+                                            {formatMoney(
+                                                purchase.shipping_cost
+                                            )}
+                                        </td>
+
+                                        <td style={styles.tdRight}>
+                                            {formatMoney(purchase.total)}
+                                        </td>
+
+                                        <td style={styles.tdCenter}>
+                                            <button
+                                                onClick={() =>
+                                                    deletePurchase(purchase.id)
+                                                }
+                                                style={styles.deleteButton}
+                                                title="Eliminar compra"
+                                            >
+                                                🗑️ Eliminar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
-
     );
-
 }
 
-
 const styles = {
-
     container: {
         marginTop: 35,
         borderTop: "1px solid #ddd",
@@ -424,7 +288,7 @@ const styles = {
 
     table: {
         width: "100%",
-        minWidth: 980,
+        minWidth: 1100,
         borderCollapse: "collapse"
     },
 
@@ -477,8 +341,8 @@ const styles = {
         borderBottom: "1px solid #eee",
         fontSize: 14,
         verticalAlign: "middle",
-        minWidth: 280,
-        maxWidth: 430,
+        minWidth: 300,
+        maxWidth: 470,
         lineHeight: 1.35
     },
 
@@ -529,5 +393,4 @@ const styles = {
         color: "#a94442",
         background: "#fff5f5"
     }
-
 };

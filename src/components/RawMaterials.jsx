@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import RawMaterialForm from "./RawMaterialForm";
+
+const API = "http://127.0.0.1:8000";
 
 export default function RawMaterials() {
     const [items, setItems] = useState([]);
@@ -11,13 +13,25 @@ export default function RawMaterials() {
             style: "currency",
             currency: "ARS",
             minimumFractionDigits: 0,
-            maximumFractionDigits: 2,
+            maximumFractionDigits: 2
         }).format(Number(value) || 0);
 
     const load = () => {
-        fetch("http://127.0.0.1:8000/raw-materials")
-            .then((r) => r.json())
-            .then(setItems)
+        fetch(`${API}/raw-materials`)
+            .then((response) => response.json())
+            .then((data) => {
+                const materials = Array.isArray(data) ? data : [];
+
+                setItems(
+                    [...materials].sort((a, b) =>
+                        String(a.name || "").localeCompare(
+                            String(b.name || ""),
+                            "es",
+                            { sensitivity: "base" }
+                        )
+                    )
+                );
+            })
             .catch(() => setItems([]));
     };
 
@@ -25,8 +39,28 @@ export default function RawMaterials() {
         load();
     }, []);
 
-    const filtered = items.filter((i) =>
-        i.name.toLowerCase().includes(search.toLowerCase())
+    const filtered = useMemo(
+        () =>
+            items.filter((item) =>
+                String(item.name || "")
+                    .toLowerCase()
+                    .includes(search.toLowerCase())
+            ),
+        [items, search]
+    );
+
+    const totalInventoryValue = useMemo(
+        () =>
+            items.reduce(
+                (sum, material) =>
+                    sum
+                    +
+                    (Number(material.stock) || 0)
+                    *
+                    (Number(material.cost) || 0),
+                0
+            ),
+        [items]
     );
 
     const remove = async (id) => {
@@ -34,8 +68,8 @@ export default function RawMaterials() {
 
         if (!ok) return;
 
-        await fetch(`http://127.0.0.1:8000/raw-materials/${id}`, {
-            method: "DELETE",
+        await fetch(`${API}/raw-materials/${id}`, {
+            method: "DELETE"
         });
 
         load();
@@ -57,16 +91,16 @@ export default function RawMaterials() {
                 style={{
                     display: "flex",
                     gap: 10,
-                    marginBottom: 20,
+                    marginBottom: 20
                 }}
             >
                 <input
                     placeholder="Buscar..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(event) => setSearch(event.target.value)}
                     style={{
                         flex: 1,
-                        padding: 10,
+                        padding: 10
                     }}
                 />
             </div>
@@ -74,7 +108,7 @@ export default function RawMaterials() {
             <table
                 style={{
                     width: "100%",
-                    borderCollapse: "collapse",
+                    borderCollapse: "collapse"
                 }}
             >
                 <thead>
@@ -92,34 +126,41 @@ export default function RawMaterials() {
                 </thead>
 
                 <tbody>
-                    {filtered.map((mp) => {
+                    {filtered.map((material) => {
                         const totalValue =
-                            (Number(mp.stock) || 0) * (Number(mp.cost) || 0);
+                            (Number(material.stock) || 0)
+                            *
+                            (Number(material.cost) || 0);
 
                         return (
-                            <tr key={mp.id}>
-                                <td>{mp.code}</td>
-                                <td>{mp.name}</td>
-                                <td>{mp.category}</td>
-                                <td>{mp.unit}</td>
-                                <td>{mp.stock}</td>
-                                <td>{mp.minimum_stock}</td>
+                            <tr key={material.id}>
+                                <td>{material.code}</td>
+                                <td>{material.name}</td>
+                                <td>{material.category}</td>
+                                <td>{material.unit}</td>
+                                <td>{material.stock}</td>
+                                <td>{material.minimum_stock}</td>
                                 <td>{formatCurrency(totalValue)}</td>
 
                                 <td>
-                                    {mp.stock === 0
+                                    {Number(material.stock) === 0
                                         ? "🔴 Sin stock"
-                                        : mp.stock <= mp.minimum_stock
+                                        : Number(material.stock)
+                                              <= Number(material.minimum_stock)
                                           ? "🟡 Bajo"
                                           : "🟢 OK"}
                                 </td>
 
                                 <td>
-                                    <button onClick={() => setEditItem(mp)}>
+                                    <button
+                                        onClick={() => setEditItem(material)}
+                                    >
                                         ✏️
                                     </button>
 
-                                    <button onClick={() => remove(mp.id)}>
+                                    <button
+                                        onClick={() => remove(material.id)}
+                                    >
                                         🗑️
                                     </button>
                                 </td>
@@ -127,6 +168,22 @@ export default function RawMaterials() {
                         );
                     })}
                 </tbody>
+
+                <tfoot>
+                    <tr
+                        style={{
+                            borderTop: "2px solid #777",
+                            fontWeight: "bold"
+                        }}
+                    >
+                        <td colSpan="6" style={{ textAlign: "right" }}>
+                            Valor total de todas las materias primas:
+                        </td>
+
+                        <td>{formatCurrency(totalInventoryValue)}</td>
+                        <td colSpan="2"></td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     );

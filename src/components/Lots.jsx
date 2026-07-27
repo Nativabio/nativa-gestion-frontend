@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 const API = "http://127.0.0.1:8000";
 
 export default function Lots() {
+    const [view, setView] = useState("new");
 
     const [formulas, setFormulas] = useState([]);
     const [formulaId, setFormulaId] = useState("");
     const [items, setItems] = useState([]);
     const [batchNumber, setBatchNumber] = useState("");
+    const [laborHourCost, setLaborHourCost] = useState(10000);
 
     const [date, setDate] = useState(
         new Date().toISOString().substring(0, 10)
@@ -17,60 +19,108 @@ export default function Lots() {
     const [laborHours, setLaborHours] = useState("");
     const [notes, setNotes] = useState("");
 
-    const LABOR_COST = 10000;
+    const [lots, setLots] = useState([]);
+    const [loadingLots, setLoadingLots] = useState(false);
+    const [expandedLotId, setExpandedLotId] = useState(null);
+    const [lotFilter, setLotFilter] = useState("");
+    const [monthFilter, setMonthFilter] = useState("");
+    const [productFilter, setProductFilter] = useState("");
 
+    const formatMoney = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            style: "currency",
+            currency: "ARS",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
 
-    useEffect(() => {
+    const formatNumber = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        });
 
-        loadFormulas();
-        loadNextLotNumber();
+    const formatDate = (value) => {
+        const dateValue = String(value || "").substring(0, 10);
+        const parts = dateValue.split("-");
 
-    }, []);
-
-
-    async function loadNextLotNumber() {
-
-        try {
-
-            const response = await fetch(
-                `${API}/next-lot-number`
-            );
-
-            const data = await response.json();
-
-            setBatchNumber(
-                data.next_number || ""
-            );
-
-        } catch {
-
-            setBatchNumber("");
-
+        if (parts.length !== 3) {
+            return dateValue || "-";
         }
 
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    };
+
+    useEffect(() => {
+        loadFormulas();
+        loadNextLotNumber();
+        loadSettings();
+        loadLots();
+    }, []);
+
+    async function loadNextLotNumber() {
+        try {
+            const response = await fetch(`${API}/next-lot-number`);
+            const data = await response.json();
+
+            setBatchNumber(data.next_number || "");
+        } catch {
+            setBatchNumber("");
+        }
     }
 
+    async function loadSettings() {
+        try {
+            const response = await fetch(`${API}/settings`);
+            const data = await response.json();
+
+            setLaborHourCost(
+                Number(data.labor_hour_cost || 0)
+            );
+        } catch {
+            setLaborHourCost(10000);
+        }
+    }
 
     async function loadFormulas() {
+        try {
+            const response = await fetch(`${API}/formulas`);
+            const data = await response.json();
+            const formulaList = Array.isArray(data) ? data : [];
 
-        const response = await fetch(
-            `${API}/formulas`
-        );
-
-        const data = await response.json();
-
-        setFormulas(data);
-
+            setFormulas(
+                [...formulaList].sort((a, b) =>
+                    String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "es",
+                        { sensitivity: "base" }
+                    )
+                )
+            );
+        } catch {
+            setFormulas([]);
+        }
     }
 
+    async function loadLots() {
+        setLoadingLots(true);
+
+        try {
+            const response = await fetch(`${API}/lots`);
+            const data = await response.json();
+
+            setLots(Array.isArray(data) ? data : []);
+        } catch {
+            setLots([]);
+        } finally {
+            setLoadingLots(false);
+        }
+    }
 
     async function loadFormula() {
-
         if (formulaId === "") {
-
             alert("Seleccioná una fórmula");
             return;
-
         }
 
         const response = await fetch(
@@ -78,132 +128,109 @@ export default function Lots() {
         );
 
         const data = await response.json();
+        const formulaItems = Array.isArray(data) ? data : [];
 
-        const nuevos = data.map((item) => ({
-
-            ...item,
-            real_quantity: item.quantity,
-            cost: (
-                item.quantity
-                *
-                (
-                    item.unit_cost
-                    /
-                    item.stock
+        const newItems = formulaItems
+            .map((item) => ({
+                ...item,
+                real_quantity: Number(item.quantity || 0)
+            }))
+            .sort((a, b) =>
+                String(a.raw_material || "").localeCompare(
+                    String(b.raw_material || ""),
+                    "es",
+                    { sensitivity: "base" }
                 )
-            )
+            );
 
-        }));
-
-        setItems(nuevos);
-
+        setItems(newItems);
     }
-
 
     function changeQuantity(index, value) {
-
-        const copia = [...items];
-
-        copia[index].real_quantity = Number(value);
-
-        setItems(copia);
-
+        setItems((currentItems) =>
+            currentItems.map((item, itemIndex) =>
+                itemIndex === index
+                    ? {
+                        ...item,
+                        real_quantity: Number(value)
+                    }
+                    : item
+            )
+        );
     }
-
 
     const totalMaterials = items.reduce(
         (sum, item) =>
             sum
             +
-            (
-                Number(item.real_quantity)
-                *
-                (
-                    Number(item.unit_cost)
-                    /
-                    Number(item.stock)
-                )
-            ),
+            Number(item.real_quantity || 0)
+            *
+            Number(item.unit_cost || 0),
         0
     );
-
 
     const laborTotal =
         Number(laborHours || 0)
         *
-        LABOR_COST;
+        Number(laborHourCost || 0);
 
-
-    const totalCost =
-        totalMaterials
-        +
-        laborTotal;
-
+    const totalCost = totalMaterials + laborTotal;
 
     const unitCost =
         Number(unitsProduced) > 0
-            ?
-            totalCost / Number(unitsProduced)
-            :
-            0;
-
+            ? totalCost / Number(unitsProduced)
+            : 0;
 
     async function finishLot() {
-
         if (!batchNumber) {
-
             alert("No se pudo obtener el número de lote");
             return;
-
         }
 
-        const response = await fetch(
-            `${API}/lots`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
+        if (!formulaId) {
+            alert("Seleccioná una fórmula");
+            return;
+        }
 
-                    lot_number: batchNumber,
-                    formula_id: Number(formulaId),
-                    production_date: date,
-                    units_produced: Number(unitsProduced),
-                    real_labor_hours: Number(laborHours),
-                    total_cost: totalCost,
-                    unit_cost: unitCost,
-                    notes: notes,
+        if (items.length === 0) {
+            alert("Cargá la fórmula antes de finalizar el lote");
+            return;
+        }
 
-                    materials: items.map((item) => ({
+        if (Number(unitsProduced) <= 0) {
+            alert("Ingresá las unidades producidas");
+            return;
+        }
 
-                        raw_material_id:
-                            item.raw_material_id,
-
-                        real_quantity:
-                            Number(item.real_quantity)
-
-                    }))
-
-                })
-            }
-        );
-
+        const response = await fetch(`${API}/lots`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                lot_number: batchNumber,
+                formula_id: Number(formulaId),
+                production_date: date,
+                units_produced: Number(unitsProduced),
+                real_labor_hours: Number(laborHours),
+                total_cost: totalCost,
+                unit_cost: unitCost,
+                notes,
+                materials: items.map((item) => ({
+                    raw_material_id: item.raw_material_id,
+                    real_quantity: Number(item.real_quantity)
+                }))
+            })
+        });
 
         const data = await response.json();
 
-
         if (data.error) {
-
-            alert("❌ " + data.error);
+            alert(`❌ ${data.error}`);
             return;
-
         }
 
-
-        alert(
-            `✅ Lote ${data.lot_number} guardado correctamente`
-        );
+        alert(`✅ Lote ${data.lot_number} guardado correctamente`);
 
         setFormulaId("");
         setItems([]);
@@ -212,126 +239,222 @@ export default function Lots() {
         setNotes("");
 
         await loadNextLotNumber();
-
+        await loadLots();
     }
 
+    async function deleteLot(lot) {
+        if (!lot.can_delete) {
+            alert(
+                lot.delete_block_reason
+                ||
+                "Este lote no puede eliminarse."
+            );
+            return;
+        }
+
+        let message =
+            `¿Eliminar el lote ${lot.lot_number}?\n\n`
+            +
+            `Se descontarán ${formatNumber(lot.units_produced)} unidades `
+            +
+            `del producto terminado y se repondrán las materias primas.`;
+
+        if (lot.material_history_source === "FORMULA_ESTIMATE") {
+            message +=
+                "\n\n⚠️ Este lote es anterior al historial detallado. "
+                +
+                "Las materias primas se repondrán según las cantidades "
+                +
+                "de la fórmula actual.";
+        }
+
+        const confirmed = window.confirm(message);
+
+        if (!confirmed) {
+            return;
+        }
+
+        const response = await fetch(`${API}/lots/${lot.id}`, {
+            method: "DELETE"
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            alert(`❌ ${data.error}`);
+            return;
+        }
+
+        let successMessage = `✅ ${data.message}`;
+
+        if (data.warning) {
+            successMessage += `\n\n⚠️ ${data.warning}`;
+        }
+
+        alert(successMessage);
+        setExpandedLotId(null);
+        await loadLots();
+        await loadNextLotNumber();
+    }
+
+    const productOptions = Array.from(
+        new Map(
+            lots.map((lot) => [
+                String(lot.product_id || lot.product_name),
+                {
+                    id: String(lot.product_id || lot.product_name),
+                    name: lot.product_name
+                }
+            ])
+        ).values()
+    ).sort((a, b) =>
+        String(a.name || "").localeCompare(
+            String(b.name || ""),
+            "es",
+            { sensitivity: "base" }
+        )
+    );
+
+    const filteredLots = lots.filter((lot) => {
+        const matchesLot = String(lot.lot_number || "")
+            .toLowerCase()
+            .includes(lotFilter.trim().toLowerCase());
+
+        const matchesMonth =
+            !monthFilter
+            ||
+            String(lot.production_date || "").startsWith(monthFilter);
+
+        const lotProductKey = String(
+            lot.product_id || lot.product_name
+        );
+
+        const matchesProduct =
+            !productFilter
+            ||
+            lotProductKey === productFilter;
+
+        return matchesLot && matchesMonth && matchesProduct;
+    });
+
+    function clearFilters() {
+        setLotFilter("");
+        setMonthFilter("");
+        setProductFilter("");
+    }
+
+    const tabButtonStyle = (active) => ({
+        padding: "9px 14px",
+        marginRight: 8,
+        borderRadius: 6,
+        border: "1px solid #999",
+        cursor: "pointer",
+        fontWeight: active ? "bold" : "normal"
+    });
 
     return (
-
         <div>
+            <h2>🏭 Lotes de producción</h2>
 
-            <h2>🏭 Producción - Nuevo Lote</h2>
+            <div style={{ marginBottom: 24 }}>
+                <button
+                    onClick={() => setView("new")}
+                    style={tabButtonStyle(view === "new")}
+                >
+                    ➕ Nuevo lote
+                </button>
 
-            <br />
-
-            <label>Número de lote</label>
-
-            <br />
-
-            <input
-                value={batchNumber}
-                disabled
-            />
-
-            <div
-                style={{
-                    marginTop: 5,
-                    fontSize: 12,
-                    color: "#666"
-                }}
-            >
-                El número se asigna automáticamente y no se repite.
+                <button
+                    onClick={() => {
+                        setView("history");
+                        loadLots();
+                    }}
+                    style={tabButtonStyle(view === "history")}
+                >
+                    📋 Historial de lotes
+                </button>
             </div>
 
-            <br />
+            {view === "new" ? (
+                <div>
+                    <h3>Nuevo lote</h3>
 
-            <label>Fecha</label>
+                    <label>Número de lote</label>
+                    <br />
+                    <input value={batchNumber} disabled />
 
-            <br />
+                    <div
+                        style={{
+                            marginTop: 5,
+                            fontSize: 12,
+                            color: "#666"
+                        }}
+                    >
+                        El número se asigna automáticamente y no se repite.
+                    </div>
 
-            <input
-                type="date"
-                value={date}
-                onChange={(e) =>
-                    setDate(e.target.value)
-                }
-            />
+                    <br />
 
-            <br /><br />
+                    <label>Fecha</label>
+                    <br />
+                    <input
+                        type="date"
+                        value={date}
+                        onChange={(event) => setDate(event.target.value)}
+                    />
 
-            <label>Fórmula</label>
+                    <br /><br />
 
-            <br />
+                    <label>Fórmula</label>
+                    <br />
+                    <select
+                        value={formulaId}
+                        onChange={(event) => {
+                            setFormulaId(event.target.value);
+                            setItems([]);
+                        }}
+                    >
+                        <option value="">Seleccionar fórmula</option>
 
-            <select
-                value={formulaId}
-                onChange={(e) =>
-                    setFormulaId(e.target.value)
-                }
-            >
+                        {formulas.map((formula) => (
+                            <option key={formula.id} value={formula.id}>
+                                {formula.name}
+                            </option>
+                        ))}
+                    </select>
 
-                <option value="">
-                    Seleccionar fórmula
-                </option>
+                    <button
+                        onClick={loadFormula}
+                        style={{ marginLeft: 10 }}
+                    >
+                        📄 Cargar Fórmula
+                    </button>
 
-                {
+                    <br /><br />
 
-                    formulas.map((formula) => (
+                    <table
+                        style={{
+                            width: "100%",
+                            borderCollapse: "collapse"
+                        }}
+                        border="1"
+                        cellPadding="8"
+                    >
+                        <thead>
+                            <tr>
+                                <th>Materia Prima</th>
+                                <th>Fórmula</th>
+                                <th>Real</th>
+                                <th>Desvío</th>
+                                <th>Costo utilizado</th>
+                            </tr>
+                        </thead>
 
-                        <option
-                            key={formula.id}
-                            value={formula.id}
-                        >
-                            {formula.name}
-                        </option>
-
-                    ))
-
-                }
-
-            </select>
-
-            <button
-                onClick={loadFormula}
-                style={{
-                    marginLeft: 10
-                }}
-            >
-                📄 Cargar Fórmula
-            </button>
-
-            <br /><br />
-
-            <table
-                style={{
-                    width: "100%",
-                    borderCollapse: "collapse"
-                }}
-                border="1"
-                cellPadding="8"
-            >
-
-                <thead>
-
-                    <tr>
-                        <th>Materia Prima</th>
-                        <th>Fórmula</th>
-                        <th>Real</th>
-                        <th>Desvío</th>
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    {
-
-                        items.length === 0
-                            ?
-                            (
+                        <tbody>
+                            {items.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan="4"
+                                        colSpan="5"
                                         style={{
                                             textAlign: "center",
                                             padding: 20
@@ -340,127 +463,381 @@ export default function Lots() {
                                         No hay materias primas cargadas.
                                     </td>
                                 </tr>
-                            )
-                            :
-                            items.map((item, index) => (
+                            ) : (
+                                items.map((item, index) => (
+                                    <tr key={item.id}>
+                                        <td>{item.raw_material}</td>
+                                        <td>
+                                            {formatNumber(item.quantity)} {item.unit}
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                value={item.real_quantity}
+                                                onChange={(event) =>
+                                                    changeQuantity(
+                                                        index,
+                                                        event.target.value
+                                                    )
+                                                }
+                                                style={{ width: 90 }}
+                                            />{" "}{item.unit}
+                                        </td>
+                                        <td>
+                                            {formatNumber(
+                                                Number(item.real_quantity)
+                                                -
+                                                Number(item.quantity)
+                                            )} {item.unit}
+                                        </td>
+                                        <td>
+                                            {formatMoney(
+                                                Number(item.real_quantity || 0)
+                                                *
+                                                Number(item.unit_cost || 0)
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
 
-                                <tr key={item.id}>
+                    <br /><br />
 
-                                    <td>{item.raw_material}</td>
+                    <label>Unidades producidas</label>
+                    <br />
+                    <input
+                        type="number"
+                        value={unitsProduced}
+                        onChange={(event) =>
+                            setUnitsProduced(event.target.value)
+                        }
+                    />
 
-                                    <td>{item.quantity}</td>
+                    <br /><br />
 
-                                    <td>
-                                        <input
-                                            type="number"
-                                            value={item.real_quantity}
-                                            onChange={(e) =>
-                                                changeQuantity(
-                                                    index,
-                                                    e.target.value
-                                                )
-                                            }
-                                            style={{
-                                                width: 90
-                                            }}
-                                        />
-                                    </td>
+                    <label>Horas de producción</label>
+                    <br />
+                    <input
+                        type="number"
+                        step="0.25"
+                        value={laborHours}
+                        onChange={(event) =>
+                            setLaborHours(event.target.value)
+                        }
+                    />
 
-                                    <td>
-                                        {
-                                            Number(item.real_quantity)
-                                            -
-                                            Number(item.quantity)
-                                        }
-                                    </td>
+                    <div
+                        style={{
+                            marginTop: 5,
+                            fontSize: 12,
+                            color: "#666"
+                        }}
+                    >
+                        Valor por hora configurado: {formatMoney(laborHourCost)}
+                    </div>
 
+                    <br />
+
+                    <label>Notas</label>
+                    <br />
+                    <textarea
+                        value={notes}
+                        onChange={(event) => setNotes(event.target.value)}
+                        rows="3"
+                        style={{ width: "450px", maxWidth: "100%" }}
+                    />
+
+                    <br /><br />
+
+                    <h3>Resumen del lote</h3>
+
+                    <table style={{ width: "450px", maxWidth: "100%" }}>
+                        <tbody>
+                            <tr>
+                                <td>Materias primas</td>
+                                <td>{formatMoney(totalMaterials)}</td>
+                            </tr>
+                            <tr>
+                                <td>Mano de obra</td>
+                                <td>{formatMoney(laborTotal)}</td>
+                            </tr>
+                            <tr>
+                                <td><b>Costo total</b></td>
+                                <td><b>{formatMoney(totalCost)}</b></td>
+                            </tr>
+                            <tr>
+                                <td><b>Costo por unidad</b></td>
+                                <td><b>{formatMoney(unitCost)}</b></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <br />
+
+                    <button onClick={finishLot}>
+                        🏭 Finalizar Lote
+                    </button>
+                </div>
+            ) : (
+                <div>
+                    <h3>Historial de lotes</h3>
+
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: 12,
+                            flexWrap: "wrap",
+                            alignItems: "end",
+                            marginBottom: 18
+                        }}
+                    >
+                        <div>
+                            <label>Buscar lote</label>
+                            <br />
+                            <input
+                                value={lotFilter}
+                                onChange={(event) =>
+                                    setLotFilter(event.target.value)
+                                }
+                                placeholder="Número de lote"
+                            />
+                        </div>
+
+                        <div>
+                            <label>Mes</label>
+                            <br />
+                            <input
+                                type="month"
+                                value={monthFilter}
+                                onChange={(event) =>
+                                    setMonthFilter(event.target.value)
+                                }
+                            />
+                        </div>
+
+                        <div>
+                            <label>Producto</label>
+                            <br />
+                            <select
+                                value={productFilter}
+                                onChange={(event) =>
+                                    setProductFilter(event.target.value)
+                                }
+                            >
+                                <option value="">Todos</option>
+
+                                {productOptions.map((product) => (
+                                    <option
+                                        key={product.id}
+                                        value={product.id}
+                                    >
+                                        {product.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <button onClick={clearFilters}>
+                            Limpiar filtros
+                        </button>
+
+                        <button onClick={loadLots}>
+                            🔄 Actualizar
+                        </button>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                        Se muestran <b>{filteredLots.length}</b> lotes.
+                    </div>
+
+                    <div style={{ overflowX: "auto" }}>
+                        <table
+                            style={{
+                                width: "100%",
+                                borderCollapse: "collapse",
+                                minWidth: 1100
+                            }}
+                            border="1"
+                            cellPadding="7"
+                        >
+                            <thead>
+                                <tr>
+                                    <th>Lote</th>
+                                    <th>Fecha</th>
+                                    <th>Producto</th>
+                                    <th>Fórmula</th>
+                                    <th>Producidas</th>
+                                    <th>Disponibles</th>
+                                    <th>Materias primas</th>
+                                    <th>Mano de obra</th>
+                                    <th>Costo total</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
                                 </tr>
+                            </thead>
 
-                            ))
+                            <tbody>
+                                {loadingLots ? (
+                                    <tr>
+                                        <td colSpan="11" style={{ textAlign: "center" }}>
+                                            Cargando lotes...
+                                        </td>
+                                    </tr>
+                                ) : filteredLots.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            colSpan="11"
+                                            style={{
+                                                textAlign: "center",
+                                                padding: 20
+                                            }}
+                                        >
+                                            No hay lotes para mostrar.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredLots.map((lot) => (
+                                        <tr key={lot.id}>
+                                            <td><b>{lot.lot_number}</b></td>
+                                            <td>{formatDate(lot.production_date)}</td>
+                                            <td>{lot.product_name}</td>
+                                            <td>{lot.formula_name}</td>
+                                            <td>{formatNumber(lot.units_produced)}</td>
+                                            <td>{formatNumber(lot.remaining_units)}</td>
+                                            <td>{formatMoney(lot.material_cost)}</td>
+                                            <td>{formatMoney(lot.labor_cost)}</td>
+                                            <td><b>{formatMoney(lot.total_cost)}</b></td>
+                                            <td>{lot.status}</td>
+                                            <td style={{ whiteSpace: "nowrap" }}>
+                                                <button
+                                                    onClick={() =>
+                                                        setExpandedLotId(
+                                                            expandedLotId === lot.id
+                                                                ? null
+                                                                : lot.id
+                                                        )
+                                                    }
+                                                >
+                                                    {expandedLotId === lot.id
+                                                        ? "Ocultar"
+                                                        : "Ver detalle"}
+                                                </button>
 
-                    }
+                                                <button
+                                                    onClick={() => deleteLot(lot)}
+                                                    disabled={!lot.can_delete}
+                                                    title={
+                                                        lot.can_delete
+                                                            ? "Eliminar lote"
+                                                            : lot.delete_block_reason
+                                                    }
+                                                    style={{ marginLeft: 6 }}
+                                                >
+                                                    🗑️ Eliminar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
 
-                </tbody>
+                    {expandedLotId && (() => {
+                        const lot = lots.find(
+                            (item) => item.id === expandedLotId
+                        );
 
-            </table>
+                        if (!lot) {
+                            return null;
+                        }
 
-            <br /><br />
+                        return (
+                            <div
+                                style={{
+                                    marginTop: 20,
+                                    padding: 16,
+                                    border: "1px solid #aaa",
+                                    borderRadius: 8
+                                }}
+                            >
+                                <h3>Detalle del lote {lot.lot_number}</h3>
 
-            <label>Unidades producidas</label>
+                                {lot.material_history_source === "FORMULA_ESTIMATE" && (
+                                    <div
+                                        style={{
+                                            padding: 10,
+                                            marginBottom: 12,
+                                            border: "1px solid #b58b00",
+                                            borderRadius: 6
+                                        }}
+                                    >
+                                        ⚠️ Este lote fue creado antes del historial
+                                        detallado. Las cantidades de materias primas
+                                        se estimaron con la fórmula actual.
+                                    </div>
+                                )}
 
-            <br />
+                                <p>
+                                    <b>Producto:</b> {lot.product_name}<br />
+                                    <b>Fórmula:</b> {lot.formula_name}<br />
+                                    <b>Fecha:</b> {formatDate(lot.production_date)}<br />
+                                    <b>Horas de trabajo:</b> {formatNumber(lot.real_labor_hours)}<br />
+                                    <b>Costo por unidad:</b> {formatMoney(lot.unit_cost)}
+                                </p>
 
-            <input
-                type="number"
-                value={unitsProduced}
-                onChange={(e) =>
-                    setUnitsProduced(
-                        e.target.value
-                    )
-                }
-            />
+                                <h4>Materias primas utilizadas</h4>
 
-            <br /><br />
+                                <table
+                                    style={{
+                                        width: "100%",
+                                        borderCollapse: "collapse"
+                                    }}
+                                    border="1"
+                                    cellPadding="7"
+                                >
+                                    <thead>
+                                        <tr>
+                                            <th>Materia prima</th>
+                                            <th>Cantidad</th>
+                                            <th>Costo unitario</th>
+                                            <th>Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {lot.materials.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="4" style={{ textAlign: "center" }}>
+                                                    Sin detalle de materias primas.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            lot.materials.map((material, index) => (
+                                                <tr
+                                                    key={`${material.raw_material_id}-${index}`}
+                                                >
+                                                    <td>{material.name}</td>
+                                                    <td>
+                                                        {formatNumber(material.quantity)} {material.unit}
+                                                    </td>
+                                                    <td>{formatMoney(material.unit_cost)}</td>
+                                                    <td>{formatMoney(material.subtotal_cost)}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
 
-            <label>Horas de producción</label>
-
-            <br />
-
-            <input
-                type="number"
-                step="0.25"
-                value={laborHours}
-                onChange={(e) =>
-                    setLaborHours(
-                        e.target.value
-                    )
-                }
-            />
-
-            <br /><br />
-
-            <h3>Resumen del lote</h3>
-
-            <table
-                style={{
-                    width: "450px"
-                }}
-            >
-
-                <tbody>
-
-                    <tr>
-                        <td>Materias primas</td>
-                        <td>${totalMaterials.toFixed(2)}</td>
-                    </tr>
-
-                    <tr>
-                        <td>Mano de obra</td>
-                        <td>${laborTotal.toFixed(2)}</td>
-                    </tr>
-
-                    <tr>
-                        <td><b>Costo total</b></td>
-                        <td><b>${totalCost.toFixed(2)}</b></td>
-                    </tr>
-
-                    <tr>
-                        <td><b>Costo por unidad</b></td>
-                        <td><b>${unitCost.toFixed(2)}</b></td>
-                    </tr>
-
-                </tbody>
-
-            </table>
-
-            <br />
-
-            <button onClick={finishLot}>
-                🏭 Finalizar Lote
-            </button>
-
+                                <p style={{ marginTop: 14 }}>
+                                    <b>Notas:</b> {lot.notes || "Sin notas"}
+                                </p>
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
         </div>
-
     );
-
 }

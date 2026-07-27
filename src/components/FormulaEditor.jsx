@@ -1,90 +1,113 @@
 import { useEffect, useState } from "react";
 
-export default function FormulaEditor({ formula }) {
+const API = "http://127.0.0.1:8000";
 
+export default function FormulaEditor({ formula }) {
     const [materials, setMaterials] = useState([]);
     const [ingredients, setIngredients] = useState([]);
     const [costData, setCostData] = useState({
-    costo_total:0,
-    materias_primas:0,
-    mano_obra:0,
-    horas_trabajo:0
-});
+        costo_total: 0,
+        costo_unitario: 0,
+        materias_primas: 0,
+        mano_obra: 0,
+        horas_trabajo: 0,
+        unidades_producidas: 0
+    });
 
     const [selectedMaterial, setSelectedMaterial] = useState("");
     const [quantity, setQuantity] = useState("");
 
-    // Cargar materias primas
+    const formatMoney = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            style: "currency",
+            currency: "ARS",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
     useEffect(() => {
+        fetch(`${API}/raw-materials`)
+            .then((response) => response.json())
+            .then((data) => {
+                const rawMaterials = Array.isArray(data) ? data : [];
 
-        fetch("http://127.0.0.1:8000/raw-materials")
-            .then(r => r.json())
-            .then(setMaterials)
+                setMaterials(
+                    [...rawMaterials].sort((a, b) =>
+                        String(a.name || "").localeCompare(
+                            String(b.name || ""),
+                            "es",
+                            { sensitivity: "base" }
+                        )
+                    )
+                );
+            })
             .catch(() => setMaterials([]));
-
     }, []);
 
-    // Cargar ingredientes de la fórmula
     useEffect(() => {
-
         if (formula) {
             loadIngredients();
         }
-
     }, [formula]);
 
     const loadIngredients = () => {
+        if (!formula) return;
 
+        fetch(`${API}/formula-items/${formula.id}`)
+            .then((response) => response.json())
+            .then((data) => {
+                const formulaItems = Array.isArray(data) ? data : [];
 
-    fetch(
-        `http://127.0.0.1:8000/formula-items/${formula.id}`
-    )
-    .then(r => r.json())
-    .then(setIngredients);
+                setIngredients(
+                    [...formulaItems].sort((a, b) =>
+                        String(a.raw_material?.name || "").localeCompare(
+                            String(b.raw_material?.name || ""),
+                            "es",
+                            { sensitivity: "base" }
+                        )
+                    )
+                );
+            })
+            .catch(() => setIngredients([]));
 
-
-
-    fetch(
-        `http://127.0.0.1:8000/formula-cost/${formula.id}`
-    )
-    .then(r => r.json())
-    .then(data => {
-
-    setCostData(data);
-
-});
-
-
-};
+        fetch(`${API}/formula-cost/${formula.id}`)
+            .then((response) => response.json())
+            .then((data) => {
+                if (!data.error) {
+                    setCostData(data);
+                }
+            });
+    };
 
     const addIngredient = async () => {
+        if (!formula || !selectedMaterial || Number(quantity) <= 0) return;
 
-        if (!selectedMaterial || quantity <= 0) return;
-
-        await fetch(
-            "http://127.0.0.1:8000/formula-items",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    formula_id: formula.id,
-                    raw_material_id: Number(selectedMaterial),
-                    quantity: Number(quantity)
-                })
-            }
-        );
+        await fetch(`${API}/formula-items`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                formula_id: formula.id,
+                raw_material_id: Number(selectedMaterial),
+                quantity: Number(quantity)
+            })
+        });
 
         setSelectedMaterial("");
         setQuantity("");
+        loadIngredients();
+    };
+
+    const removeIngredient = async (itemId) => {
+        await fetch(`${API}/formula-items/${itemId}`, {
+            method: "DELETE"
+        });
 
         loadIngredients();
-
     };
 
     if (!formula) {
-
         return (
             <div
                 style={{
@@ -98,11 +121,9 @@ export default function FormulaEditor({ formula }) {
                 <p>Seleccione una fórmula.</p>
             </div>
         );
-
     }
 
     return (
-
         <div
             style={{
                 marginTop: 20,
@@ -111,49 +132,34 @@ export default function FormulaEditor({ formula }) {
                 padding: 20
             }}
         >
-
             <h2>🧪 {formula.name}</h2>
 
             <div>
+                <h3>💰 Costos</h3>
 
-    <h3>💰 Costos</h3>
+                <p>
+                    Materias primas:{" "}
+                    <b>{formatMoney(costData.materias_primas)}</b>
+                </p>
 
-    <p>
-        Materias primas:
-        <b> ${costData.materias_primas}</b>
-    </p>
+                <p>
+                    Mano de obra:{" "}
+                    <b>{formatMoney(costData.mano_obra)}</b>{" "}
+                    ({costData.horas_trabajo || 0} horas)
+                </p>
 
-    <p>
-        Mano de obra:
-        <b> ${costData.mano_obra}</b>
-        (
-        {costData.horas_trabajo} horas
-        )
-    </p>
+                <hr />
 
+                <h3>
+                    Costo total del lote:{" "}
+                    {formatMoney(costData.costo_total)}
+                </h3>
 
-    <hr />
-
-    <h3>
-        Costo total lote:
-        ${costData.costo_total}
-    </h3>
-
-    <p>
-    <b>📦 Unidades producidas:</b> {formula.units_produced}
-</p>
-
-<p>
-    <b>💰 Costo por unidad:</b> $
-    {
-        (
-            costData.costo_total /
-            formula.units_produced
-        ).toFixed(2)
-    }
-</p>
-
-</div>
+                <h3>
+                    Costo por unidad:{" "}
+                    {formatMoney(costData.costo_unitario)}
+                </h3>
+            </div>
 
             <p>
                 <b>Lote estándar:</b> {formula.batch_size}
@@ -165,42 +171,28 @@ export default function FormulaEditor({ formula }) {
 
             <select
                 value={selectedMaterial}
-                onChange={(e) => setSelectedMaterial(e.target.value)}
+                onChange={(event) =>
+                    setSelectedMaterial(event.target.value)
+                }
             >
+                <option value="">Seleccionar materia prima...</option>
 
-                <option value="">
-                    Seleccionar materia prima...
-                </option>
-
-                {materials.map(material => (
-
-                    <option
-                        key={material.id}
-                        value={material.id}
-                    >
+                {materials.map((material) => (
+                    <option key={material.id} value={material.id}>
                         {material.code} - {material.name}
                     </option>
-
                 ))}
-
             </select>
 
             <input
                 type="number"
                 placeholder="Cantidad"
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                style={{
-                    marginLeft: 10
-                }}
+                onChange={(event) => setQuantity(event.target.value)}
+                style={{ marginLeft: 10 }}
             />
 
-            <button
-                onClick={addIngredient}
-                style={{
-                    marginLeft: 10
-                }}
-            >
+            <button onClick={addIngredient} style={{ marginLeft: 10 }}>
                 ➕ Agregar
             </button>
 
@@ -214,80 +206,47 @@ export default function FormulaEditor({ formula }) {
                     borderCollapse: "collapse"
                 }}
             >
-
                 <thead>
-
                     <tr>
-
                         <th>Materia Prima</th>
                         <th>Cantidad</th>
                         <th>Unidad</th>
-                        <th>Costo</th>
-                        <th>Total</th>
+                        <th>Costo unitario</th>
+                        <th>Costo utilizado</th>
                         <th></th>
-
                     </tr>
-
                 </thead>
 
                 <tbody>
+                    {ingredients.map((item) => {
+                        const unitCost = Number(
+                            item.raw_material?.cost || 0
+                        );
 
-                    {ingredients.map((item) => (
+                        const usedCost =
+                            Number(item.quantity || 0) * unitCost;
 
-                        <tr key={item.id}>
-
-                            <td>{item.raw_material?.name}</td>
-
-                            <td>{item.quantity}</td>
-
-                            <td>{item.raw_material?.unit}</td>
-
-                            <td>
-                                $
-                                {item.raw_material?.cost}
-                            </td>
-
-                            <td>
-                                $
-                                 {(
-                             item.quantity *
-                               (
-                             (item.raw_material?.cost || 0) /
-                             (item.raw_material?.stock || 1)
-                                )
-                                 ).toFixed(2)}
-                            </td>
-                            <td>
-
-                                  <button
-                                     onClick={async()=>{
-
-                                       await fetch(
-                                         `http://127.0.0.1:8000/formula-items/${item.id}`,
-                                         {
-                                          method:"DELETE"
-                                             }
-                                        );
-
-                                         loadIngredients();
-
-                                 }}
-    >
-                                      🗑
-                                     </button>
-
-                                 </td>
-
-                        </tr>
-
-                    ))}
-
+                        return (
+                            <tr key={item.id}>
+                                <td>{item.raw_material?.name}</td>
+                                <td>{item.quantity}</td>
+                                <td>{item.raw_material?.unit}</td>
+                                <td>{formatMoney(unitCost)}</td>
+                                <td>{formatMoney(usedCost)}</td>
+                                <td>
+                                    <button
+                                        onClick={() =>
+                                            removeIngredient(item.id)
+                                        }
+                                    >
+                                        🗑
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
-
             </table>
-
         </div>
-
     );
-
 }
