@@ -2,167 +2,96 @@ import { useEffect, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
-export default function SaleHistory() {
-
+export default function SaleHistory({ onEdit, onChanged }) {
     const [sales, setSales] = useState([]);
-
     const [loading, setLoading] = useState(true);
-
     const [error, setError] = useState("");
 
-
     useEffect(() => {
-
         loadSales();
-
     }, []);
 
-
     async function loadSales() {
-
         setLoading(true);
-
         setError("");
 
         try {
-
-            const response = await fetch(
-                `${API}/sales`
-            );
-
+            const response = await fetch(`${API}/sales`);
             const data = await response.json();
 
             if (!response.ok || data.error) {
-
                 throw new Error(
                     data.error ||
                     "No se pudo cargar el historial de ventas"
                 );
-
             }
 
-            setSales(
-                Array.isArray(data)
-                    ? data
-                    : []
-            );
-
+            setSales(Array.isArray(data) ? data : []);
         } catch (err) {
-
             setError(err.message);
-
         } finally {
-
             setLoading(false);
-
         }
-
     }
 
-
     async function deleteSale(id) {
-
         const confirmed = window.confirm(
-            "¿Seguro que querés eliminar esta venta?"
+            "¿Seguro que querés eliminar esta venta?\n\n" +
+            "Se devolverán los productos a sus lotes y se eliminarán " +
+            "los asientos automáticos."
         );
 
-        if (!confirmed) {
+        if (!confirmed) return;
 
-            return;
-
-        }
-
-        const response = await fetch(
-            `${API}/sales/${id}`,
-            {
-                method: "DELETE"
-            }
-        );
+        const response = await fetch(`${API}/sales/${id}`, {
+            method: "DELETE"
+        });
 
         const data = await response.json();
 
         if (!response.ok || data.error) {
-
-            alert(
-                data.error ||
-                "No se pudo eliminar la venta"
-            );
-
+            alert(data.error || "No se pudo eliminar la venta");
             return;
-
         }
 
-        alert(
-            data.mensaje ||
-            "Venta eliminada"
-        );
-
+        alert(data.mensaje || "Venta eliminada");
         await loadSales();
 
+        if (onChanged) {
+            await onChanged();
+        }
     }
-
 
     function formatMoney(value) {
-
-        return Number(value || 0).toLocaleString(
-            "es-AR",
-            {
-                style: "currency",
-                currency: "ARS",
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }
-        );
-
+        return Number(value || 0).toLocaleString("es-AR", {
+            style: "currency",
+            currency: "ARS",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
     }
-
 
     function formatNumber(value) {
-
-        return Number(value || 0).toLocaleString(
-            "es-AR",
-            {
-                maximumFractionDigits: 3
-            }
-        );
-
+        return Number(value || 0).toLocaleString("es-AR", {
+            maximumFractionDigits: 3
+        });
     }
-
 
     function formatDate(value) {
+        const normalized = String(value || "").substring(0, 10);
 
-        const normalized = String(
-            value || ""
-        ).substring(0, 10);
-
-        if (!normalized) {
-
-            return "";
-
-        }
+        if (!normalized) return "";
 
         const parts = normalized.split("-");
-
-        if (parts.length !== 3) {
-
-            return normalized;
-
-        }
+        if (parts.length !== 3) return normalized;
 
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
-
     }
 
-
     function saleDetail(sale) {
-
         const items = sale.items || [];
 
-        if (items.length === 0) {
-
-            return "Sin detalle";
-
-        }
+        if (items.length === 0) return "Sin detalle";
 
         return items
             .map(
@@ -170,211 +99,110 @@ export default function SaleHistory() {
                     `${item.name} × ${formatNumber(item.quantity)}`
             )
             .join(" · ");
-
     }
 
-
     return (
-
         <div style={styles.container}>
-
             <div style={styles.header}>
-
                 <div>
-
-                    <h2 style={styles.title}>
-                        📋 Historial de Ventas
-                    </h2>
-
+                    <h2 style={styles.title}>📋 Historial de Ventas</h2>
                     <p style={styles.subtitle}>
-                        Ventas registradas, ordenadas desde la más reciente.
+                        Podés corregir una venta sin duplicar el stock ni los
+                        asientos contables.
                     </p>
-
                 </div>
 
-                <button
-                    onClick={loadSales}
-                    style={styles.refreshButton}
-                >
+                <button onClick={loadSales} style={styles.refreshButton}>
                     🔄 Actualizar
                 </button>
-
             </div>
 
+            {loading && <p>Cargando ventas...</p>}
 
-            {
+            {error && <div style={styles.errorBox}>{error}</div>}
 
-                loading && (
+            {!loading && !error && sales.length === 0 && (
+                <p>No hay ventas registradas.</p>
+            )}
 
-                    <p>Cargando ventas...</p>
+            {!loading && !error && sales.length > 0 && (
+                <div style={styles.tableWrapper}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th style={styles.th}>Venta</th>
+                                <th style={styles.th}>Fecha</th>
+                                <th style={styles.th}>Cliente</th>
+                                <th style={styles.th}>Detalle</th>
+                                <th style={styles.th}>Pago</th>
+                                <th style={styles.thRight}>Total</th>
+                                <th style={styles.thCenter}>Acciones</th>
+                            </tr>
+                        </thead>
 
-                )
+                        <tbody>
+                            {sales.map((sale) => {
+                                const detail = saleDetail(sale);
 
-            }
+                                return (
+                                    <tr key={sale.id}>
+                                        <td style={styles.tdStrong}>
+                                            {sale.number}
+                                        </td>
+                                        <td style={styles.td}>
+                                            {formatDate(sale.date)}
+                                        </td>
+                                        <td style={styles.td}>
+                                            {sale.client || "Consumidor final"}
+                                        </td>
+                                        <td
+                                            style={styles.detailCell}
+                                            title={detail}
+                                        >
+                                            {detail}
+                                        </td>
+                                        <td style={styles.td}>
+                                            {sale.payment_method || "Caja"}
+                                        </td>
+                                        <td style={styles.tdRight}>
+                                            {formatMoney(sale.total)}
+                                        </td>
+                                        <td style={styles.tdCenter}>
+                                            <button
+                                                onClick={() => onEdit?.(sale)}
+                                                style={styles.editButton}
+                                                title="Editar venta"
+                                            >
+                                                ✏️ Editar
+                                            </button>
 
-
-            {
-
-                error && (
-
-                    <div style={styles.errorBox}>
-                        {error}
-                    </div>
-
-                )
-
-            }
-
-
-            {
-
-                !loading &&
-                !error &&
-                sales.length === 0 && (
-
-                    <p>No hay ventas registradas.</p>
-
-                )
-
-            }
-
-
-            {
-
-                !loading &&
-                !error &&
-                sales.length > 0 && (
-
-                    <div style={styles.tableWrapper}>
-
-                        <table style={styles.table}>
-
-                            <thead>
-
-                                <tr>
-
-                                    <th style={styles.th}>
-                                        Venta
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Fecha
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Cliente
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Detalle
-                                    </th>
-
-                                    <th style={styles.th}>
-                                        Pago
-                                    </th>
-
-                                    <th style={styles.thRight}>
-                                        Total
-                                    </th>
-
-                                    <th style={styles.thCenter}>
-                                        Acción
-                                    </th>
-
-                                </tr>
-
-                            </thead>
-
-                            <tbody>
-
-                                {
-
-                                    sales.map((sale) => {
-
-                                        const detail = saleDetail(
-                                            sale
-                                        );
-
-                                        return (
-
-                                            <tr key={sale.id}>
-
-                                                <td style={styles.tdStrong}>
-                                                    {sale.number}
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {formatDate(sale.date)}
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {sale.client || "Consumidor final"}
-                                                </td>
-
-                                                <td
-                                                    style={styles.detailCell}
-                                                    title={detail}
-                                                >
-                                                    {detail}
-                                                </td>
-
-                                                <td style={styles.td}>
-                                                    {sale.payment_method || "Caja"}
-                                                </td>
-
-                                                <td style={styles.tdRight}>
-                                                    {formatMoney(sale.total)}
-                                                </td>
-
-                                                <td style={styles.tdCenter}>
-
-                                                    <button
-                                                        onClick={() =>
-                                                            deleteSale(
-                                                                sale.id
-                                                            )
-                                                        }
-                                                        style={styles.deleteButton}
-                                                        title="Eliminar venta"
-                                                    >
-                                                        🗑️ Eliminar
-                                                    </button>
-
-                                                </td>
-
-                                            </tr>
-
-                                        );
-
-                                    })
-
-                                }
-
-                            </tbody>
-
-                        </table>
-
-                    </div>
-
-                )
-
-            }
-
+                                            <button
+                                                onClick={() =>
+                                                    deleteSale(sale.id)
+                                                }
+                                                style={styles.deleteButton}
+                                                title="Eliminar venta"
+                                            >
+                                                🗑️ Eliminar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
-
     );
-
 }
 
-
 const styles = {
-
     container: {
         marginTop: 35,
         borderTop: "1px solid #ddd",
         paddingTop: 20
     },
-
     header: {
         display: "flex",
         justifyContent: "space-between",
@@ -383,17 +211,12 @@ const styles = {
         flexWrap: "wrap",
         marginBottom: 18
     },
-
-    title: {
-        margin: 0
-    },
-
+    title: { margin: 0 },
     subtitle: {
         margin: "5px 0 0",
         color: "#666",
         fontSize: 14
     },
-
     tableWrapper: {
         width: "100%",
         overflowX: "auto",
@@ -401,13 +224,11 @@ const styles = {
         borderRadius: 10,
         background: "white"
     },
-
     table: {
         width: "100%",
-        minWidth: 940,
+        minWidth: 1000,
         borderCollapse: "collapse"
     },
-
     th: {
         padding: "11px 12px",
         textAlign: "left",
@@ -416,7 +237,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     thRight: {
         padding: "11px 12px",
         textAlign: "right",
@@ -425,7 +245,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     thCenter: {
         padding: "11px 12px",
         textAlign: "center",
@@ -434,7 +253,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     td: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -442,7 +260,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     tdStrong: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -451,7 +268,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     detailCell: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -461,7 +277,6 @@ const styles = {
         maxWidth: 430,
         lineHeight: 1.35
     },
-
     tdRight: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -471,7 +286,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     tdCenter: {
         padding: "8px 12px",
         borderBottom: "1px solid #eee",
@@ -479,7 +293,12 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
+    editButton: {
+        padding: "6px 10px",
+        marginRight: 7,
+        cursor: "pointer",
+        whiteSpace: "nowrap"
+    },
     deleteButton: {
         background: "#d9534f",
         color: "white",
@@ -489,12 +308,10 @@ const styles = {
         cursor: "pointer",
         whiteSpace: "nowrap"
     },
-
     refreshButton: {
         padding: "7px 12px",
         cursor: "pointer"
     },
-
     errorBox: {
         padding: 12,
         border: "1px solid #d9534f",
@@ -502,5 +319,4 @@ const styles = {
         color: "#a94442",
         background: "#fff5f5"
     }
-
 };

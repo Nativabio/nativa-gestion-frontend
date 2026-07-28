@@ -69,9 +69,18 @@ export default function Accounting() {
 
         date: today(),
         concept: "",
-        debitAccount: "",
-        creditAccount: "",
-        amount: ""
+        lines: [
+            {
+                account_code: "",
+                debit: "",
+                credit: ""
+            },
+            {
+                account_code: "",
+                debit: "",
+                credit: ""
+            }
+        ]
 
     });
 
@@ -225,6 +234,109 @@ export default function Accounting() {
     }
 
 
+    function updateManualLine(
+        index,
+        field,
+        value
+    ) {
+
+        setManualEntry((current) => ({
+
+            ...current,
+
+            lines: current.lines.map(
+                (line, lineIndex) => {
+
+                    if (lineIndex !== index) {
+
+                        return line;
+
+                    }
+
+                    const updated = {
+                        ...line,
+                        [field]: value
+                    };
+
+                    if (
+                        field === "debit"
+                        &&
+                        Number(value) > 0
+                    ) {
+
+                        updated.credit = "";
+
+                    }
+
+                    if (
+                        field === "credit"
+                        &&
+                        Number(value) > 0
+                    ) {
+
+                        updated.debit = "";
+
+                    }
+
+                    return updated;
+
+                }
+            )
+
+        }));
+
+    }
+
+
+    function addManualLine() {
+
+        setManualEntry((current) => ({
+
+            ...current,
+
+            lines: [
+                ...current.lines,
+                {
+                    account_code: "",
+                    debit: "",
+                    credit: ""
+                }
+            ]
+
+        }));
+
+    }
+
+
+    function removeManualLine(
+        index
+    ) {
+
+        setManualEntry((current) => {
+
+            if (current.lines.length <= 2) {
+
+                alert(
+                    "El asiento debe conservar al menos dos renglones"
+                );
+
+                return current;
+
+            }
+
+            return {
+                ...current,
+                lines: current.lines.filter(
+                    (_, lineIndex) =>
+                        lineIndex !== index
+                )
+            };
+
+        });
+
+    }
+
+
     async function saveManualEntry() {
 
         if (!manualEntry.date) {
@@ -243,60 +355,101 @@ export default function Accounting() {
 
         }
 
-        if (
-            !manualEntry.debitAccount ||
-            !manualEntry.creditAccount
-        ) {
-
-            alert("Seleccioná las cuentas del Debe y del Haber");
-
-            return;
-
-        }
-
-        if (
-            manualEntry.debitAccount
-            ===
-            manualEntry.creditAccount
-        ) {
+        if (manualEntry.lines.length < 2) {
 
             alert(
-                "La cuenta del Debe y del Haber deben ser distintas"
+                "El asiento debe tener al menos dos renglones"
             );
 
             return;
 
         }
 
-        const amount = Number(
-            manualEntry.amount
-        );
+        let totalDebit = 0;
+        let totalCredit = 0;
 
-        if (!amount || amount <= 0) {
+        for (
+            let index = 0;
+            index < manualEntry.lines.length;
+            index += 1
+        ) {
 
-            alert("Ingresá un importe mayor a cero");
+            const line = manualEntry.lines[index];
 
-            return;
+            if (!line.account_code) {
+
+                alert(
+                    `Falta la cuenta del renglón ${index + 1}`
+                );
+
+                return;
+
+            }
+
+            const debit = Number(
+                line.debit || 0
+            );
+
+            const credit = Number(
+                line.credit || 0
+            );
+
+            if (debit < 0 || credit < 0) {
+
+                alert(
+                    "Los importes no pueden ser negativos"
+                );
+
+                return;
+
+            }
+
+            if (debit > 0 && credit > 0) {
+
+                alert(
+                    (
+                        `El renglón ${index + 1} no puede tener `
+                        +
+                        "Debe y Haber al mismo tiempo"
+                    )
+                );
+
+                return;
+
+            }
+
+            if (debit <= 0 && credit <= 0) {
+
+                alert(
+                    `El renglón ${index + 1} no tiene importe`
+                );
+
+                return;
+
+            }
+
+            totalDebit += debit;
+            totalCredit += credit;
 
         }
 
-        const debitAccount = accounts.find(
-            (account) =>
-                account.id
-                ===
-                Number(manualEntry.debitAccount)
-        );
+        if (
+            Math.abs(
+                totalDebit
+                -
+                totalCredit
+            ) > 0.009
+        ) {
 
-        const creditAccount = accounts.find(
-            (account) =>
-                account.id
-                ===
-                Number(manualEntry.creditAccount)
-        );
-
-        if (!debitAccount || !creditAccount) {
-
-            alert("No se encontraron las cuentas seleccionadas");
+            alert(
+                (
+                    "El asiento está desbalanceado. "
+                    +
+                    `Debe: $${formatMoney(totalDebit)} - `
+                    +
+                    `Haber: $${formatMoney(totalCredit)}`
+                )
+            );
 
             return;
 
@@ -305,25 +458,24 @@ export default function Accounting() {
         const response = await fetch(
             `${API}/journal-entry`,
             {
-
                 method: "POST",
-
                 headers: {
                     "Content-Type": "application/json"
                 },
-
                 body: JSON.stringify({
-
                     date: manualEntry.date,
                     concept: manualEntry.concept.trim(),
-                    debit_code: debitAccount.code,
-                    debit_name: debitAccount.name,
-                    credit_code: creditAccount.code,
-                    credit_name: creditAccount.name,
-                    amount: amount
-
+                    lines: manualEntry.lines.map(
+                        (line) => ({
+                            account_code:
+                                line.account_code,
+                            debit:
+                                Number(line.debit || 0),
+                            credit:
+                                Number(line.credit || 0)
+                        })
+                    )
                 })
-
             }
         );
 
@@ -340,16 +492,25 @@ export default function Accounting() {
 
         }
 
-        alert("Asiento contable registrado correctamente");
+        alert(
+            "Asiento contable registrado correctamente"
+        );
 
         setManualEntry({
-
             date: today(),
             concept: "",
-            debitAccount: "",
-            creditAccount: "",
-            amount: ""
-
+            lines: [
+                {
+                    account_code: "",
+                    debit: "",
+                    credit: ""
+                },
+                {
+                    account_code: "",
+                    debit: "",
+                    credit: ""
+                }
+            ]
         });
 
         await loadJournal();
@@ -484,7 +645,8 @@ export default function Accounting() {
             VENTA: "Venta",
             CMV: "Costo de venta",
             COMPRA: "Compra",
-            PRODUCCION: "Producción"
+            PRODUCCION: "Producción",
+            BAJA_STOCK: "Baja de stock"
 
         };
 
@@ -1120,6 +1282,31 @@ export default function Accounting() {
     }
 
 
+    const manualTotalDebit = manualEntry.lines.reduce(
+        (sum, line) =>
+            sum + Number(line.debit || 0),
+        0
+    );
+
+
+    const manualTotalCredit = manualEntry.lines.reduce(
+        (sum, line) =>
+            sum + Number(line.credit || 0),
+        0
+    );
+
+
+    const manualBalanced = (
+        manualTotalDebit > 0
+        &&
+        Math.abs(
+            manualTotalDebit
+            -
+            manualTotalCredit
+        ) < 0.01
+    );
+
+
     const journalGroups = getJournalGroups(
         journal
     );
@@ -1596,15 +1783,13 @@ export default function Accounting() {
                                 gridTemplateColumns:
                                     "repeat(2, minmax(250px, 1fr))",
                                 gap: 20,
-                                maxWidth: 850
+                                maxWidth: 950
                             }}
                         >
 
                             <div>
 
                                 <label>Fecha</label>
-
-                                <br />
 
                                 <input
                                     type="date"
@@ -1625,40 +1810,9 @@ export default function Accounting() {
 
                             </div>
 
-
-                            <div>
-
-                                <label>Importe</label>
-
-                                <br />
-
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={manualEntry.amount}
-                                    onChange={(event) =>
-                                        setManualEntry({
-                                            ...manualEntry,
-                                            amount: event.target.value
-                                        })
-                                    }
-                                    style={{
-                                        width: "100%",
-                                        padding: 8,
-                                        marginTop: 5,
-                                        boxSizing: "border-box"
-                                    }}
-                                />
-
-                            </div>
-
-
                             <div style={{ gridColumn: "1 / -1" }}>
 
                                 <label>Concepto</label>
-
-                                <br />
 
                                 <input
                                     placeholder="Ejemplo: Pago de luz"
@@ -1679,105 +1833,224 @@ export default function Accounting() {
 
                             </div>
 
+                        </div>
 
-                            <div>
+                        <div
+                            style={{
+                                marginTop: 22,
+                                overflowX: "auto"
+                            }}
+                        >
 
-                                <label>Cuenta del Debe</label>
+                            <table
+                                style={{
+                                    ...tableStyle,
+                                    minWidth: 760
+                                }}
+                            >
 
-                                <br />
+                                <thead>
 
-                                <select
-                                    value={manualEntry.debitAccount}
-                                    onChange={(event) =>
-                                        setManualEntry({
-                                            ...manualEntry,
-                                            debitAccount:
-                                                event.target.value
-                                        })
-                                    }
-                                    style={{
-                                        width: "100%",
-                                        padding: 8,
-                                        marginTop: 5
-                                    }}
-                                >
+                                    <tr>
+                                        <th style={cellStyle}>Cuenta</th>
+                                        <th style={cellStyle}>Debe</th>
+                                        <th style={cellStyle}>Haber</th>
+                                        <th style={cellStyle}></th>
+                                    </tr>
 
-                                    <option value="">
-                                        Seleccionar cuenta
-                                    </option>
+                                </thead>
 
-                                    {
+                                <tbody>
 
-                                        accounts.map((account) => (
+                                    {manualEntry.lines.map(
+                                        (line, index) => (
 
-                                            <option
-                                                key={account.id}
-                                                value={account.id}
-                                            >
-                                                {account.code} - {account.name}
-                                            </option>
+                                            <tr key={index}>
 
-                                        ))
+                                                <td style={cellStyle}>
 
-                                    }
+                                                    <select
+                                                        value={
+                                                            line.account_code
+                                                        }
+                                                        onChange={(event) =>
+                                                            updateManualLine(
+                                                                index,
+                                                                "account_code",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        style={{
+                                                            width: "100%",
+                                                            padding: 7
+                                                        }}
+                                                    >
 
-                                </select>
+                                                        <option value="">
+                                                            Seleccionar cuenta
+                                                        </option>
 
-                            </div>
+                                                        {accounts.map(
+                                                            (account) => (
+                                                                <option
+                                                                    key={
+                                                                        account.id
+                                                                    }
+                                                                    value={
+                                                                        account.code
+                                                                    }
+                                                                >
+                                                                    {account.code}
+                                                                    {" - "}
+                                                                    {account.name}
+                                                                </option>
+                                                            )
+                                                        )}
 
+                                                    </select>
 
-                            <div>
+                                                </td>
 
-                                <label>Cuenta del Haber</label>
+                                                <td style={cellStyle}>
 
-                                <br />
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={line.debit}
+                                                        onChange={(event) =>
+                                                            updateManualLine(
+                                                                index,
+                                                                "debit",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        style={{
+                                                            width: "100%",
+                                                            boxSizing:
+                                                                "border-box",
+                                                            padding: 7
+                                                        }}
+                                                    />
 
-                                <select
-                                    value={manualEntry.creditAccount}
-                                    onChange={(event) =>
-                                        setManualEntry({
-                                            ...manualEntry,
-                                            creditAccount:
-                                                event.target.value
-                                        })
-                                    }
-                                    style={{
-                                        width: "100%",
-                                        padding: 8,
-                                        marginTop: 5
-                                    }}
-                                >
+                                                </td>
 
-                                    <option value="">
-                                        Seleccionar cuenta
-                                    </option>
+                                                <td style={cellStyle}>
 
-                                    {
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={line.credit}
+                                                        onChange={(event) =>
+                                                            updateManualLine(
+                                                                index,
+                                                                "credit",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        style={{
+                                                            width: "100%",
+                                                            boxSizing:
+                                                                "border-box",
+                                                            padding: 7
+                                                        }}
+                                                    />
 
-                                        accounts.map((account) => (
+                                                </td>
 
-                                            <option
-                                                key={account.id}
-                                                value={account.id}
-                                            >
-                                                {account.code} - {account.name}
-                                            </option>
+                                                <td style={cellStyle}>
 
-                                        ))
+                                                    <button
+                                                        onClick={() =>
+                                                            removeManualLine(
+                                                                index
+                                                            )
+                                                        }
+                                                    >
+                                                        ✕
+                                                    </button>
 
-                                    }
+                                                </td>
 
-                                </select>
+                                            </tr>
 
-                            </div>
+                                        )
+                                    )}
+
+                                </tbody>
+
+                                <tfoot>
+
+                                    <tr>
+
+                                        <td style={cellStyle}>
+                                            <b>Totales</b>
+                                        </td>
+
+                                        <td
+                                            style={{
+                                                ...cellStyle,
+                                                textAlign: "right"
+                                            }}
+                                        >
+                                            <b>
+                                                $
+                                                {formatMoney(
+                                                    manualTotalDebit
+                                                )}
+                                            </b>
+                                        </td>
+
+                                        <td
+                                            style={{
+                                                ...cellStyle,
+                                                textAlign: "right"
+                                            }}
+                                        >
+                                            <b>
+                                                $
+                                                {formatMoney(
+                                                    manualTotalCredit
+                                                )}
+                                            </b>
+                                        </td>
+
+                                        <td style={cellStyle}>
+                                            {manualBalanced
+                                                ? "✅"
+                                                : "⚠️"}
+                                        </td>
+
+                                    </tr>
+
+                                </tfoot>
+
+                            </table>
 
                         </div>
 
-                        <br />
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: 10,
+                                marginTop: 15,
+                                flexWrap: "wrap"
+                            }}
+                        >
 
-                        <button onClick={saveManualEntry}>
-                            💾 Registrar asiento
-                        </button>
+                            <button onClick={addManualLine}>
+                                ➕ Agregar renglón
+                            </button>
+
+                            <button
+                                onClick={saveManualEntry}
+                                disabled={!manualBalanced}
+                            >
+                                💾 Registrar asiento
+                            </button>
+
+                        </div>
 
                     </div>
 

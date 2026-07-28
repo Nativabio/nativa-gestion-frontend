@@ -11,7 +11,9 @@ export default function FormulaEditor({ formula }) {
         materias_primas: 0,
         mano_obra: 0,
         horas_trabajo: 0,
-        unidades_producidas: 0
+        unidades_producidas: 0,
+        margen_rentabilidad: 40,
+        precio_estimado: 0
     });
 
     const [selectedMaterial, setSelectedMaterial] = useState("");
@@ -50,7 +52,7 @@ export default function FormulaEditor({ formula }) {
         }
     }, [formula]);
 
-    const loadIngredients = () => {
+    function loadIngredients() {
         if (!formula) return;
 
         fetch(`${API}/formula-items/${formula.id}`)
@@ -77,12 +79,12 @@ export default function FormulaEditor({ formula }) {
                     setCostData(data);
                 }
             });
-    };
+    }
 
-    const addIngredient = async () => {
+    async function addIngredient() {
         if (!formula || !selectedMaterial || Number(quantity) <= 0) return;
 
-        await fetch(`${API}/formula-items`, {
+        const response = await fetch(`${API}/formula-items`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -94,29 +96,29 @@ export default function FormulaEditor({ formula }) {
             })
         });
 
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+            alert(data.error || "No se pudo agregar el ingrediente");
+            return;
+        }
+
         setSelectedMaterial("");
         setQuantity("");
         loadIngredients();
-    };
+    }
 
-    const removeIngredient = async (itemId) => {
+    async function removeIngredient(itemId) {
         await fetch(`${API}/formula-items/${itemId}`, {
             method: "DELETE"
         });
 
         loadIngredients();
-    };
+    }
 
     if (!formula) {
         return (
-            <div
-                style={{
-                    marginTop: 20,
-                    border: "1px solid #ccc",
-                    borderRadius: 10,
-                    padding: 20
-                }}
-            >
+            <div style={styles.card}>
                 <h2>🧪 Fórmulas</h2>
                 <p>Seleccione una fórmula.</p>
             </div>
@@ -124,45 +126,47 @@ export default function FormulaEditor({ formula }) {
     }
 
     return (
-        <div
-            style={{
-                marginTop: 20,
-                border: "1px solid #ccc",
-                borderRadius: 10,
-                padding: 20
-            }}
-        >
+        <div style={styles.card}>
             <h2>🧪 {formula.name}</h2>
 
-            <div>
-                <h3>💰 Costos</h3>
+            <div style={styles.costGrid}>
+                <div style={styles.costBox}>
+                    <span>Materias primas</span>
+                    <strong>{formatMoney(costData.materias_primas)}</strong>
+                </div>
 
-                <p>
-                    Materias primas:{" "}
-                    <b>{formatMoney(costData.materias_primas)}</b>
-                </p>
+                <div style={styles.costBox}>
+                    <span>Mano de obra</span>
+                    <strong>{formatMoney(costData.mano_obra)}</strong>
+                    <small>{costData.horas_trabajo || 0} horas</small>
+                </div>
 
-                <p>
-                    Mano de obra:{" "}
-                    <b>{formatMoney(costData.mano_obra)}</b>{" "}
-                    ({costData.horas_trabajo || 0} horas)
-                </p>
+                <div style={styles.costBox}>
+                    <span>Costo total del lote</span>
+                    <strong>{formatMoney(costData.costo_total)}</strong>
+                </div>
 
-                <hr />
+                <div style={styles.costBox}>
+                    <span>Costo por unidad</span>
+                    <strong>{formatMoney(costData.costo_unitario)}</strong>
+                </div>
 
-                <h3>
-                    Costo total del lote:{" "}
-                    {formatMoney(costData.costo_total)}
-                </h3>
-
-                <h3>
-                    Costo por unidad:{" "}
-                    {formatMoney(costData.costo_unitario)}
-                </h3>
+                <div style={styles.priceBox}>
+                    <span>
+                        Precio estimado con margen de{" "}
+                        {Number(costData.margen_rentabilidad || 0).toLocaleString(
+                            "es-AR",
+                            { maximumFractionDigits: 2 }
+                        )}%
+                    </span>
+                    <strong>{formatMoney(costData.precio_estimado)}</strong>
+                </div>
             </div>
 
             <p>
                 <b>Lote estándar:</b> {formula.batch_size}
+                {" · "}
+                <b>Unidades:</b> {formula.units_produced}
             </p>
 
             <hr />
@@ -176,7 +180,6 @@ export default function FormulaEditor({ formula }) {
                 }
             >
                 <option value="">Seleccionar materia prima...</option>
-
                 {materials.map((material) => (
                     <option key={material.id} value={material.id}>
                         {material.code} - {material.name}
@@ -186,6 +189,8 @@ export default function FormulaEditor({ formula }) {
 
             <input
                 type="number"
+                min="0.0001"
+                step="any"
                 placeholder="Cantidad"
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
@@ -200,12 +205,7 @@ export default function FormulaEditor({ formula }) {
 
             <h3>📋 Ingredientes</h3>
 
-            <table
-                style={{
-                    width: "100%",
-                    borderCollapse: "collapse"
-                }}
-            >
+            <table style={styles.table}>
                 <thead>
                     <tr>
                         <th>Materia Prima</th>
@@ -216,13 +216,11 @@ export default function FormulaEditor({ formula }) {
                         <th></th>
                     </tr>
                 </thead>
-
                 <tbody>
                     {ingredients.map((item) => {
                         const unitCost = Number(
                             item.raw_material?.cost || 0
                         );
-
                         const usedCost =
                             Number(item.quantity || 0) * unitCost;
 
@@ -250,3 +248,39 @@ export default function FormulaEditor({ formula }) {
         </div>
     );
 }
+
+const styles = {
+    card: {
+        marginTop: 20,
+        border: "1px solid #ccc",
+        borderRadius: 10,
+        padding: 20
+    },
+    costGrid: {
+        display: "grid",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 12,
+        marginBottom: 20
+    },
+    costBox: {
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        padding: 14,
+        display: "flex",
+        flexDirection: "column",
+        gap: 5
+    },
+    priceBox: {
+        border: "2px solid #777",
+        borderRadius: 8,
+        padding: 14,
+        display: "flex",
+        flexDirection: "column",
+        gap: 5
+    },
+    table: {
+        width: "100%",
+        borderCollapse: "collapse"
+    }
+};

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
-export default function PurchaseHistory() {
+export default function PurchaseHistory({ onEdit, onChanged }) {
     const [purchases, setPurchases] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -36,51 +36,45 @@ export default function PurchaseHistory() {
 
     async function deletePurchase(id) {
         const confirmed = window.confirm(
-            "¿Eliminar esta compra?"
+            "¿Eliminar esta compra?\n\n" +
+            "Se descontarán las materias primas incorporadas y se " +
+            "eliminará el asiento contable automático."
         );
 
         if (!confirmed) return;
 
-        const response = await fetch(
-            `${API}/purchases/${id}`,
-            {
-                method: "DELETE"
-            }
-        );
+        const response = await fetch(`${API}/purchases/${id}`, {
+            method: "DELETE"
+        });
 
         const data = await response.json();
 
         if (!response.ok || data.error) {
-            alert(
-                data.error ||
-                "No se pudo eliminar la compra"
-            );
+            alert(data.error || "No se pudo eliminar la compra");
             return;
         }
 
-        alert("Compra eliminada");
+        alert(data.message || "Compra eliminada");
         await loadPurchases();
+
+        if (onChanged) {
+            await onChanged();
+        }
     }
 
     function formatMoney(value) {
-        return Number(value || 0).toLocaleString(
-            "es-AR",
-            {
-                style: "currency",
-                currency: "ARS",
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }
-        );
+        return Number(value || 0).toLocaleString("es-AR", {
+            style: "currency",
+            currency: "ARS",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
     }
 
     function formatNumber(value) {
-        return Number(value || 0).toLocaleString(
-            "es-AR",
-            {
-                maximumFractionDigits: 3
-            }
-        );
+        return Number(value || 0).toLocaleString("es-AR", {
+            maximumFractionDigits: 3
+        });
     }
 
     function formatDate(value) {
@@ -89,47 +83,34 @@ export default function PurchaseHistory() {
         if (!normalized) return "";
 
         const parts = normalized.split("-");
-
         if (parts.length !== 3) return normalized;
 
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
 
     function purchaseDetail(purchase) {
-        const materialItems = (
-            purchase.items || []
-        ).map((item) => {
-            const unit = item.unit
-                ? ` ${item.unit}`
-                : "";
+        const materialItems = (purchase.items || []).map((item) => {
+            const unit = item.unit ? ` ${item.unit}` : "";
 
             return (
-                `${item.name} `
-                +
+                `${item.name} ` +
                 `(${formatNumber(item.quantity)}${unit})`
             );
         });
 
-        const extraItems = (
-            purchase.extra_items || []
-        ).map((item) => {
+        const extraItems = (purchase.extra_items || []).map((item) => {
             const category = item.category
                 ? ` · ${item.category}`
                 : "";
 
             return (
-                `${item.name} `
-                +
-                `(${formatNumber(item.quantity)})`
-                +
+                `${item.name} ` +
+                `(${formatNumber(item.quantity)})` +
                 category
             );
         });
 
-        const detail = [
-            ...materialItems,
-            ...extraItems
-        ];
+        const detail = [...materialItems, ...extraItems];
 
         return detail.length === 0
             ? "Sin detalle"
@@ -140,11 +121,10 @@ export default function PurchaseHistory() {
         <div style={styles.container}>
             <div style={styles.header}>
                 <div>
-                    <h2 style={styles.title}>
-                        📋 Historial de Compras
-                    </h2>
+                    <h2 style={styles.title}>📋 Historial de Compras</h2>
                     <p style={styles.subtitle}>
-                        Compras registradas, ordenadas desde la más reciente.
+                        Podés corregir una compra sin duplicar stock ni
+                        asientos contables.
                     </p>
                 </div>
 
@@ -158,11 +138,7 @@ export default function PurchaseHistory() {
 
             {loading && <p>Cargando compras...</p>}
 
-            {error && (
-                <div style={styles.errorBox}>
-                    {error}
-                </div>
-            )}
+            {error && <div style={styles.errorBox}>{error}</div>}
 
             {!loading && !error && purchases.length === 0 && (
                 <p>No hay compras registradas.</p>
@@ -180,14 +156,13 @@ export default function PurchaseHistory() {
                                 <th style={styles.th}>Pago</th>
                                 <th style={styles.thRight}>Envío</th>
                                 <th style={styles.thRight}>Total</th>
-                                <th style={styles.thCenter}>Acción</th>
+                                <th style={styles.thCenter}>Acciones</th>
                             </tr>
                         </thead>
 
                         <tbody>
                             {purchases.map((purchase) => {
-                                const detail =
-                                    purchaseDetail(purchase);
+                                const detail = purchaseDetail(purchase);
 
                                 return (
                                     <tr key={purchase.id}>
@@ -195,8 +170,13 @@ export default function PurchaseHistory() {
                                             {purchase.number}
 
                                             {purchase.invoice_number && (
-                                                <div style={styles.secondaryText}>
-                                                    Factura: {purchase.invoice_number}
+                                                <div
+                                                    style={
+                                                        styles.secondaryText
+                                                    }
+                                                >
+                                                    Factura:{" "}
+                                                    {purchase.invoice_number}
                                                 </div>
                                             )}
                                         </td>
@@ -206,7 +186,8 @@ export default function PurchaseHistory() {
                                         </td>
 
                                         <td style={styles.td}>
-                                            {purchase.supplier || "Sin proveedor"}
+                                            {purchase.supplier ||
+                                                "Sin proveedor"}
                                         </td>
 
                                         <td
@@ -231,6 +212,16 @@ export default function PurchaseHistory() {
                                         </td>
 
                                         <td style={styles.tdCenter}>
+                                            <button
+                                                onClick={() =>
+                                                    onEdit?.(purchase)
+                                                }
+                                                style={styles.editButton}
+                                                title="Editar compra"
+                                            >
+                                                ✏️ Editar
+                                            </button>
+
                                             <button
                                                 onClick={() =>
                                                     deletePurchase(purchase.id)
@@ -258,7 +249,6 @@ const styles = {
         borderTop: "1px solid #ddd",
         paddingTop: 20
     },
-
     header: {
         display: "flex",
         justifyContent: "space-between",
@@ -267,17 +257,12 @@ const styles = {
         flexWrap: "wrap",
         marginBottom: 18
     },
-
-    title: {
-        margin: 0
-    },
-
+    title: { margin: 0 },
     subtitle: {
         margin: "5px 0 0",
         color: "#666",
         fontSize: 14
     },
-
     tableWrapper: {
         width: "100%",
         overflowX: "auto",
@@ -285,13 +270,11 @@ const styles = {
         borderRadius: 10,
         background: "white"
     },
-
     table: {
         width: "100%",
-        minWidth: 1100,
+        minWidth: 1180,
         borderCollapse: "collapse"
     },
-
     th: {
         padding: "11px 12px",
         textAlign: "left",
@@ -300,7 +283,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     thRight: {
         padding: "11px 12px",
         textAlign: "right",
@@ -309,7 +291,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     thCenter: {
         padding: "11px 12px",
         textAlign: "center",
@@ -318,7 +299,6 @@ const styles = {
         fontSize: 13,
         whiteSpace: "nowrap"
     },
-
     td: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -326,7 +306,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     tdStrong: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -335,7 +314,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     detailCell: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -345,7 +323,6 @@ const styles = {
         maxWidth: 470,
         lineHeight: 1.35
     },
-
     tdRight: {
         padding: "10px 12px",
         borderBottom: "1px solid #eee",
@@ -355,7 +332,6 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     tdCenter: {
         padding: "8px 12px",
         borderBottom: "1px solid #eee",
@@ -363,14 +339,18 @@ const styles = {
         verticalAlign: "middle",
         whiteSpace: "nowrap"
     },
-
     secondaryText: {
         marginTop: 3,
         fontSize: 11,
         fontWeight: "normal",
         color: "#777"
     },
-
+    editButton: {
+        padding: "6px 10px",
+        marginRight: 7,
+        cursor: "pointer",
+        whiteSpace: "nowrap"
+    },
     deleteButton: {
         background: "#d9534f",
         color: "white",
@@ -380,12 +360,10 @@ const styles = {
         cursor: "pointer",
         whiteSpace: "nowrap"
     },
-
     refreshButton: {
         padding: "7px 12px",
         cursor: "pointer"
     },
-
     errorBox: {
         padding: 12,
         border: "1px solid #d9534f",

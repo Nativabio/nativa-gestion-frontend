@@ -75,6 +75,7 @@ export default function Formulas() {
 
                 onSaved={()=>{
                     setEditing(null);
+                    setSelected(null);
                     load();
                 }}
 
