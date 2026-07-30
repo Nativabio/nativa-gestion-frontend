@@ -16,6 +16,12 @@ export default function RawMaterials() {
             maximumFractionDigits: 2
         }).format(Number(value) || 0);
 
+    const formatQuantity = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
     const load = () => {
         fetch(`${API}/raw-materials`)
             .then((response) => response.json())
@@ -113,7 +119,6 @@ export default function RawMaterials() {
             >
                 <thead>
                     <tr>
-                        <th>Código</th>
                         <th>Nombre</th>
                         <th>Categoría</th>
                         <th>Unidad</th>
@@ -134,12 +139,11 @@ export default function RawMaterials() {
 
                         return (
                             <tr key={material.id}>
-                                <td>{material.code}</td>
                                 <td>{material.name}</td>
                                 <td>{material.category}</td>
                                 <td>{material.unit}</td>
-                                <td>{material.stock}</td>
-                                <td>{material.minimum_stock}</td>
+                                <td>{formatQuantity(material.stock)}</td>
+                                <td>{formatQuantity(material.minimum_stock)}</td>
                                 <td>{formatCurrency(totalValue)}</td>
 
                                 <td>
@@ -158,9 +162,7 @@ export default function RawMaterials() {
                                         ✏️
                                     </button>
 
-                                    <button
-                                        onClick={() => remove(material.id)}
-                                    >
+                                    <button onClick={() => remove(material.id)}>
                                         🗑️
                                     </button>
                                 </td>
@@ -176,7 +178,7 @@ export default function RawMaterials() {
                             fontWeight: "bold"
                         }}
                     >
-                        <td colSpan="6" style={{ textAlign: "right" }}>
+                        <td colSpan="5" style={{ textAlign: "right" }}>
                             Valor total de todas las materias primas:
                         </td>
 

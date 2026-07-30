@@ -4,141 +4,153 @@ const API = "http://127.0.0.1:8000";
 
 const emptyForm = {
     name: "",
-    output_product_id: "",
-    batch_size: 1,
-    units_produced: 1,
-    labor_hours: 0,
-    margin_percent: 40,
-    notes: ""
+    category: "",
+    unit: "g",
+    stock: 0,
+    minimum_stock: 0,
+    cost: 0,
+    supplier: "",
+    location: "",
+    is_intermediate: 0
 };
 
-export default function FormulaForm({ onSaved, editing }) {
-    const [products, setProducts] = useState([]);
+export default function RawMaterialForm({
+    onSaved,
+    editItem
+}) {
     const [form, setForm] = useState(emptyForm);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        loadProducts();
-    }, []);
-
-    useEffect(() => {
-        if (editing) {
+        if (editItem) {
             setForm({
-                name: editing.name || "",
-                output_product_id: editing.output_product_id || "",
-                batch_size: editing.batch_size || 1,
-                units_produced: editing.units_produced || 1,
-                labor_hours: editing.labor_hours || 0,
-                margin_percent:
-                    editing.margin_percent ?? 40,
-                notes: editing.notes || ""
+                name: editItem.name || "",
+                category: editItem.category || "",
+                unit: editItem.unit || "g",
+                stock: Number(editItem.stock || 0),
+                minimum_stock:
+                    Number(editItem.minimum_stock || 0),
+                cost: Number(editItem.cost || 0),
+                supplier: editItem.supplier || "",
+                location: editItem.location || "",
+                is_intermediate:
+                    Number(editItem.is_intermediate || 0)
             });
         } else {
             setForm(emptyForm);
         }
-    }, [editing]);
-
-    async function loadProducts() {
-        const response = await fetch(`${API}/products`);
-        const data = await response.json();
-        setProducts(Array.isArray(data) ? data : []);
-    }
+    }, [editItem]);
 
     function change(event) {
-        setForm({
-            ...form,
-            [event.target.name]: event.target.value
-        });
+        const {
+            name,
+            value,
+            type,
+            checked
+        } = event.target;
+
+        if (
+            name === "is_intermediate"
+            &&
+            type === "checkbox"
+        ) {
+            setForm((current) => ({
+                ...current,
+                is_intermediate: checked ? 1 : 0,
+                stock:
+                    checked && !editItem
+                        ? 0
+                        : current.stock,
+                cost:
+                    checked && !editItem
+                        ? 0
+                        : current.cost
+            }));
+            return;
+        }
+
+        setForm((current) => ({
+            ...current,
+            [name]: value
+        }));
     }
 
     async function save() {
-        const margin = Number(form.margin_percent);
-
-        if (!form.output_product_id) {
-            alert("Seleccioná el producto terminado");
-            return;
-        }
-
         if (!form.name.trim()) {
-            alert("Ingresá el nombre de la fórmula");
+            alert("Ingresá el nombre de la materia prima");
             return;
         }
 
-        if (margin < 0 || margin >= 100) {
-            alert("El margen debe ser mayor o igual a 0 y menor a 100");
+        if (!form.unit.trim()) {
+            alert("Ingresá la unidad");
             return;
         }
 
-        const url = editing
-            ? `${API}/formulas/${editing.id}`
-            : `${API}/formulas`;
+        setSaving(true);
 
-        const response = await fetch(url, {
-            method: editing ? "PUT" : "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: form.name.trim(),
-                output_product_id: Number(form.output_product_id),
-                batch_size: Number(form.batch_size),
-                units_produced: Number(form.units_produced),
-                labor_hours: Number(form.labor_hours),
-                margin_percent: margin,
-                notes: form.notes
-            })
-        });
+        try {
+            const method =
+                editItem ? "PUT" : "POST";
 
-        const data = await response.json();
+            const url = editItem
+                ? `${API}/raw-materials/${editItem.id}`
+                : `${API}/raw-materials`;
 
-        if (!response.ok || data.error) {
-            alert(data.error || "No se pudo guardar la fórmula");
-            return;
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    code: editItem?.code || "",
+                    name: form.name.trim(),
+                    category: form.category.trim(),
+                    unit: form.unit.trim(),
+                    stock: Number(form.stock || 0),
+                    minimum_stock:
+                        Number(form.minimum_stock || 0),
+                    cost: Number(form.cost || 0),
+                    supplier: form.supplier.trim(),
+                    location: form.location.trim(),
+                    is_intermediate:
+                        Number(form.is_intermediate || 0)
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                alert(
+                    data.error
+                    ||
+                    "No se pudo guardar la materia prima"
+                );
+                return;
+            }
+
+            setForm(emptyForm);
+            onSaved?.();
+        } catch {
+            alert("No se pudo conectar con el backend");
+        } finally {
+            setSaving(false);
         }
-
-        setForm(emptyForm);
-        onSaved();
     }
 
+    const isIntermediate =
+        Number(form.is_intermediate || 0) === 1;
+
     return (
-        <div
-            style={{
-                border: "1px solid #ccc",
-                padding: 20,
-                borderRadius: 10,
-                marginBottom: 20
-            }}
-        >
+        <div style={styles.card}>
             <h3>
-                {editing ? "✏ Editar Fórmula" : "🧪 Nueva Fórmula"}
+                {editItem
+                    ? "✏️ Editar Materia Prima"
+                    : "🌿 Nueva Materia Prima"}
             </h3>
 
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                        "repeat(auto-fit, minmax(210px, 1fr))",
-                    gap: 14
-                }}
-            >
+            <div style={styles.grid}>
                 <div>
-                    <label>Producto terminado</label>
-                    <select
-                        name="output_product_id"
-                        value={form.output_product_id}
-                        onChange={change}
-                        style={styles.input}
-                    >
-                        <option value="">Seleccionar producto</option>
-                        {products.map((product) => (
-                            <option key={product.id} value={product.id}>
-                                {product.name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div>
-                    <label>Nombre de la fórmula</label>
+                    <label>Nombre</label>
                     <input
                         name="name"
                         value={form.name}
@@ -148,81 +160,149 @@ export default function FormulaForm({ onSaved, editing }) {
                 </div>
 
                 <div>
-                    <label>Cantidad del lote</label>
+                    <label>Categoría</label>
                     <input
-                        name="batch_size"
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={form.batch_size}
+                        name="category"
+                        value={form.category}
                         onChange={change}
                         style={styles.input}
                     />
                 </div>
 
                 <div>
-                    <label>Unidades producidas</label>
-                    <input
-                        name="units_produced"
-                        type="number"
-                        min="0.0001"
-                        step="any"
-                        value={form.units_produced}
+                    <label>Unidad</label>
+                    <select
+                        name="unit"
+                        value={form.unit}
                         onChange={change}
                         style={styles.input}
-                    />
+                    >
+                        <option value="g">g</option>
+                        <option value="ml">ml</option>
+                        <option value="unidad">unidad</option>
+                        <option value="kg">kg</option>
+                        <option value="l">l</option>
+                    </select>
                 </div>
 
                 <div>
-                    <label>Horas de elaboración</label>
+                    <label>Stock</label>
                     <input
-                        name="labor_hours"
+                        name="stock"
                         type="number"
-                        min="0"
-                        step="0.25"
-                        value={form.labor_hours}
-                        onChange={change}
-                        style={styles.input}
-                    />
-                </div>
-
-                <div>
-                    <label>Margen de rentabilidad (%)</label>
-                    <input
-                        name="margin_percent"
-                        type="number"
-                        min="0"
-                        max="99.99"
                         step="0.01"
-                        value={form.margin_percent}
+                        value={form.stock}
+                        onChange={change}
+                        disabled={isIntermediate}
+                        style={styles.input}
+                    />
+                </div>
+
+                <div>
+                    <label>Stock mínimo</label>
+                    <input
+                        name="minimum_stock"
+                        type="number"
+                        step="0.01"
+                        value={form.minimum_stock}
                         onChange={change}
                         style={styles.input}
                     />
-                    <div style={styles.helpText}>
-                        Ejemplo: 40% divide el costo por 0,60.
-                    </div>
                 </div>
 
-                <div style={{ gridColumn: "1 / -1" }}>
-                    <label>Observaciones</label>
-                    <textarea
-                        name="notes"
-                        value={form.notes}
+                <div>
+                    <label>
+                        Costo por {form.unit || "unidad"}
+                    </label>
+                    <input
+                        name="cost"
+                        type="number"
+                        min="0"
+                        step="0.0001"
+                        value={form.cost}
                         onChange={change}
-                        rows={4}
+                        disabled={isIntermediate}
+                        style={styles.input}
+                    />
+                </div>
+
+                <div>
+                    <label>Proveedor</label>
+                    <input
+                        name="supplier"
+                        value={form.supplier}
+                        onChange={change}
+                        style={styles.input}
+                    />
+                </div>
+
+                <div>
+                    <label>Ubicación</label>
+                    <input
+                        name="location"
+                        value={form.location}
+                        onChange={change}
                         style={styles.input}
                     />
                 </div>
             </div>
 
-            <button onClick={save} style={{ marginTop: 16 }}>
-                💾 Guardar
+            <label style={styles.checkbox}>
+                <input
+                    name="is_intermediate"
+                    type="checkbox"
+                    checked={isIntermediate}
+                    onChange={change}
+                    disabled={
+                        Boolean(editItem)
+                        &&
+                        Number(editItem.is_intermediate || 0)
+                            === 1
+                    }
+                />
+                Es una materia prima elaborada
+                (por ejemplo, un oleato)
+            </label>
+
+            {isIntermediate && (
+                <div style={styles.help}>
+                    El stock y el costo se generan al fabricar su lote.
+                    No hace falta cargarlos manualmente.
+                </div>
+            )}
+
+            <div style={styles.help}>
+                El código se genera internamente y no se muestra.
+            </div>
+
+            <button
+                onClick={save}
+                disabled={saving}
+                style={{ marginTop: 14 }}
+            >
+                {saving
+                    ? "Guardando..."
+                    : editItem
+                        ? "💾 Guardar cambios"
+                        : "💾 Guardar Materia Prima"}
             </button>
         </div>
     );
 }
 
 const styles = {
+    card: {
+        border: "1px solid #ccc",
+        padding: 20,
+        borderRadius: 10,
+        marginBottom: 20
+    },
+    grid: {
+        display: "grid",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(210px, 1fr))",
+        gap: 14
+    },
     input: {
         display: "block",
         width: "100%",
@@ -230,8 +310,15 @@ const styles = {
         padding: 8,
         marginTop: 5
     },
-    helpText: {
-        marginTop: 4,
+    checkbox: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        marginTop: 18,
+        fontWeight: "bold"
+    },
+    help: {
+        marginTop: 6,
         fontSize: 12,
         color: "#666"
     }

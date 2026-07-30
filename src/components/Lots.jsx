@@ -14,6 +14,7 @@ export default function Lots() {
     const [date, setDate] = useState(
         new Date().toISOString().substring(0, 10)
     );
+    const [expirationDate, setExpirationDate] = useState("");
 
     const [unitsProduced, setUnitsProduced] = useState("");
     const [laborHours, setLaborHours] = useState("");
@@ -25,6 +26,16 @@ export default function Lots() {
     const [lotFilter, setLotFilter] = useState("");
     const [monthFilter, setMonthFilter] = useState("");
     const [productFilter, setProductFilter] = useState("");
+
+    const [editingLot, setEditingLot] = useState(null);
+    const [editForm, setEditForm] = useState({
+        production_date: "",
+        expiration_date: "",
+        units_produced: "",
+        real_labor_hours: "",
+        notes: ""
+    });
+    const [savingEdit, setSavingEdit] = useState(false);
 
     const formatMoney = (value) =>
         Number(value || 0).toLocaleString("es-AR", {
@@ -84,9 +95,87 @@ export default function Lots() {
 
     async function loadFormulas() {
         try {
-            const response = await fetch(`${API}/formulas`);
-            const data = await response.json();
-            const formulaList = Array.isArray(data) ? data : [];
+            const [
+                formulasResponse,
+                productsResponse,
+                materialsResponse
+            ] = await Promise.all([
+                fetch(`${API}/formulas`),
+                fetch(`${API}/products`),
+                fetch(`${API}/raw-materials`)
+            ]);
+
+            const [
+                formulasData,
+                productsData,
+                materialsData
+            ] = await Promise.all([
+                formulasResponse.json(),
+                productsResponse.json(),
+                materialsResponse.json()
+            ]);
+
+            const productNames = new Map(
+                (Array.isArray(productsData)
+                    ? productsData
+                    : []
+                ).map((product) => [
+                    Number(product.id),
+                    product.name
+                ])
+            );
+
+            const materialsById = new Map(
+                (Array.isArray(materialsData)
+                    ? materialsData
+                    : []
+                ).map((material) => [
+                    Number(material.id),
+                    material
+                ])
+            );
+
+            const formulaList = (
+                Array.isArray(formulasData)
+                    ? formulasData
+                    : []
+            ).map((formula) => {
+                const outputType = String(
+                    formula.output_type
+                    || (
+                        formula.output_raw_material_id
+                            ? "RAW_MATERIAL"
+                            : "PRODUCT"
+                    )
+                ).toUpperCase();
+
+                const outputMaterial = materialsById.get(
+                    Number(formula.output_raw_material_id)
+                );
+
+                return {
+                    ...formula,
+                    output_type: outputType,
+                    output_name:
+                        outputType === "RAW_MATERIAL"
+                            ? (
+                                outputMaterial?.name
+                                ||
+                                "Materia prima elaborada"
+                            )
+                            : (
+                                productNames.get(
+                                    Number(formula.output_product_id)
+                                )
+                                ||
+                                "Producto terminado"
+                            ),
+                    output_unit:
+                        outputType === "RAW_MATERIAL"
+                            ? outputMaterial?.unit || ""
+                            : "unid."
+                };
+            });
 
             setFormulas(
                 [...formulaList].sort((a, b) =>
@@ -159,6 +248,26 @@ export default function Lots() {
         );
     }
 
+    const selectedFormula = formulas.find(
+        (formula) =>
+            Number(formula.id)
+            ===
+            Number(formulaId)
+    );
+
+    const selectedOutputType = String(
+        selectedFormula?.output_type || "PRODUCT"
+    ).toUpperCase();
+
+    const selectedOutputUnit =
+        selectedFormula?.output_unit
+        ||
+        (
+            selectedOutputType === "RAW_MATERIAL"
+                ? ""
+                : "unid."
+        );
+
     const totalMaterials = items.reduce(
         (sum, item) =>
             sum
@@ -211,6 +320,7 @@ export default function Lots() {
                 lot_number: batchNumber,
                 formula_id: Number(formulaId),
                 production_date: date,
+                expiration_date: expirationDate || null,
                 units_produced: Number(unitsProduced),
                 real_labor_hours: Number(laborHours),
                 total_cost: totalCost,
@@ -230,16 +340,137 @@ export default function Lots() {
             return;
         }
 
-        alert(`✅ Lote ${data.lot_number} guardado correctamente`);
+        alert(
+            `✅ ${
+                data.message
+                ||
+                `Lote ${data.lot_number} guardado correctamente`
+            }`
+        );
 
         setFormulaId("");
         setItems([]);
+        setExpirationDate("");
         setUnitsProduced("");
         setLaborHours("");
         setNotes("");
 
         await loadNextLotNumber();
         await loadLots();
+    }
+
+    function openEditLot(lot) {
+        setEditingLot(lot);
+
+        setEditForm({
+            production_date:
+                String(lot.production_date || "").substring(0, 10),
+            expiration_date:
+                String(lot.expiration_date || "").substring(0, 10),
+            units_produced:
+                String(lot.units_produced ?? ""),
+            real_labor_hours:
+                String(lot.real_labor_hours ?? ""),
+            notes:
+                lot.notes || ""
+        });
+    }
+
+    function closeEditLot() {
+        setEditingLot(null);
+
+        setEditForm({
+            production_date: "",
+            expiration_date: "",
+            units_produced: "",
+            real_labor_hours: "",
+            notes: ""
+        });
+    }
+
+    function changeEditField(event) {
+        const { name, value } = event.target;
+
+        setEditForm((current) => ({
+            ...current,
+            [name]: value
+        }));
+    }
+
+    async function saveEditedLot() {
+        if (!editingLot) {
+            return;
+        }
+
+        if (!editForm.production_date) {
+            alert("Ingresá la fecha de elaboración");
+            return;
+        }
+
+        if (Number(editForm.units_produced) <= 0) {
+            alert("Las unidades producidas deben ser mayores a cero");
+            return;
+        }
+
+        if (Number(editForm.real_labor_hours || 0) < 0) {
+            alert("Las horas de producción no pueden ser negativas");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `¿Guardar los cambios del lote ${editingLot.lot_number}?`
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        setSavingEdit(true);
+
+        try {
+            const response = await fetch(
+                `${API}/lots/${editingLot.id}`,
+                {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        production_date: editForm.production_date,
+                        expiration_date:
+                            editForm.expiration_date || null,
+                        units_produced:
+                            Number(editForm.units_produced),
+                        real_labor_hours:
+                            Number(editForm.real_labor_hours || 0),
+                        notes:
+                            editForm.notes
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                alert(
+                    `❌ ${
+                        data.error
+                        ||
+                        "No se pudo modificar el lote"
+                    }`
+                );
+                return;
+            }
+
+            alert(`✅ ${data.message}`);
+
+            closeEditLot();
+            await loadLots();
+        } catch {
+            alert("❌ No se pudo conectar con el backend");
+        } finally {
+            setSavingEdit(false);
+        }
     }
 
     async function deleteLot(lot) {
@@ -255,9 +486,12 @@ export default function Lots() {
         let message =
             `¿Eliminar el lote ${lot.lot_number}?\n\n`
             +
-            `Se descontarán ${formatNumber(lot.units_produced)} unidades `
-            +
-            `del producto terminado y se repondrán las materias primas.`;
+            `Se descontarán ${formatNumber(lot.units_produced)} ${
+                String(lot.output_type).toUpperCase()
+                    === "RAW_MATERIAL"
+                    ? "del stock de la materia prima elaborada"
+                    : "unidades del producto terminado"
+            } y se repondrán las materias primas utilizadas.`;
 
         if (lot.material_history_source === "FORMULA_ESTIMATE") {
             message +=
@@ -405,6 +639,18 @@ export default function Lots() {
 
                     <br /><br />
 
+                    <label>Fecha de vencimiento</label>
+                    <br />
+                    <input
+                        type="date"
+                        value={expirationDate}
+                        onChange={(event) =>
+                            setExpirationDate(event.target.value)
+                        }
+                    />
+
+                    <br /><br />
+
                     <label>Fórmula</label>
                     <br />
                     <select
@@ -419,6 +665,8 @@ export default function Lots() {
                         {formulas.map((formula) => (
                             <option key={formula.id} value={formula.id}>
                                 {formula.name}
+                                {" — "}
+                                {formula.output_name}
                             </option>
                         ))}
                     </select>
@@ -505,10 +753,19 @@ export default function Lots() {
 
                     <br /><br />
 
-                    <label>Unidades producidas</label>
+                    <label>
+                        {selectedOutputType === "RAW_MATERIAL"
+                            ? `Cantidad real obtenida${
+                                selectedOutputUnit
+                                    ? ` (${selectedOutputUnit})`
+                                    : ""
+                            }`
+                            : "Unidades producidas"}
+                    </label>
                     <br />
                     <input
                         type="number"
+                        step="any"
                         value={unitsProduced}
                         onChange={(event) =>
                             setUnitsProduced(event.target.value)
@@ -618,7 +875,7 @@ export default function Lots() {
                         </div>
 
                         <div>
-                            <label>Producto</label>
+                            <label>Resultado</label>
                             <br />
                             <select
                                 value={productFilter}
@@ -657,7 +914,7 @@ export default function Lots() {
                             style={{
                                 width: "100%",
                                 borderCollapse: "collapse",
-                                minWidth: 1100
+                                minWidth: 1260
                             }}
                             border="1"
                             cellPadding="7"
@@ -666,10 +923,11 @@ export default function Lots() {
                                 <tr>
                                     <th>Lote</th>
                                     <th>Fecha</th>
-                                    <th>Producto</th>
+                                    <th>Resultado</th>
+                                    <th>Tipo</th>
                                     <th>Fórmula</th>
-                                    <th>Producidas</th>
-                                    <th>Disponibles</th>
+                                    <th>Producido</th>
+                                    <th>Disponible</th>
                                     <th>Materias primas</th>
                                     <th>Mano de obra</th>
                                     <th>Costo total</th>
@@ -681,14 +939,14 @@ export default function Lots() {
                             <tbody>
                                 {loadingLots ? (
                                     <tr>
-                                        <td colSpan="11" style={{ textAlign: "center" }}>
+                                        <td colSpan="12" style={{ textAlign: "center" }}>
                                             Cargando lotes...
                                         </td>
                                     </tr>
                                 ) : filteredLots.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan="11"
+                                            colSpan="12"
                                             style={{
                                                 textAlign: "center",
                                                 padding: 20
@@ -703,9 +961,33 @@ export default function Lots() {
                                             <td><b>{lot.lot_number}</b></td>
                                             <td>{formatDate(lot.production_date)}</td>
                                             <td>{lot.product_name}</td>
+                                            <td>
+                                                {String(
+                                                    lot.output_type || "PRODUCT"
+                                                ).toUpperCase()
+                                                    === "RAW_MATERIAL"
+                                                    ? "Materia prima elaborada"
+                                                    : "Producto terminado"}
+                                            </td>
                                             <td>{lot.formula_name}</td>
-                                            <td>{formatNumber(lot.units_produced)}</td>
-                                            <td>{formatNumber(lot.remaining_units)}</td>
+                                            <td>
+                                                {formatNumber(lot.units_produced)}
+                                                {String(
+                                                    lot.output_type || "PRODUCT"
+                                                ).toUpperCase()
+                                                    === "RAW_MATERIAL"
+                                                    ? ""
+                                                    : " unid."}
+                                            </td>
+                                            <td>
+                                                {formatNumber(lot.remaining_units)}
+                                                {String(
+                                                    lot.output_type || "PRODUCT"
+                                                ).toUpperCase()
+                                                    === "RAW_MATERIAL"
+                                                    ? ""
+                                                    : " unid."}
+                                            </td>
                                             <td>{formatMoney(lot.material_cost)}</td>
                                             <td>{formatMoney(lot.labor_cost)}</td>
                                             <td><b>{formatMoney(lot.total_cost)}</b></td>
@@ -723,6 +1005,19 @@ export default function Lots() {
                                                     {expandedLotId === lot.id
                                                         ? "Ocultar"
                                                         : "Ver detalle"}
+                                                </button>
+
+                                                <button
+                                                    onClick={() => openEditLot(lot)}
+                                                    disabled={!lot.can_edit}
+                                                    title={
+                                                        lot.can_edit
+                                                            ? "Editar lote"
+                                                            : "Este lote no se puede editar"
+                                                    }
+                                                    style={{ marginLeft: 6 }}
+                                                >
+                                                    ✏️ Editar
                                                 </button>
 
                                                 <button
@@ -744,6 +1039,149 @@ export default function Lots() {
                             </tbody>
                         </table>
                     </div>
+
+                    {editingLot && (
+                        <div
+                            style={{
+                                marginTop: 20,
+                                padding: 18,
+                                border: "2px solid #777",
+                                borderRadius: 8,
+                                background: "#fafafa"
+                            }}
+                        >
+                            <h3>
+                                ✏️ Editar lote {editingLot.lot_number}
+                            </h3>
+
+                            <p>
+                                <b>Producto:</b> {editingLot.product_name}
+                                <br />
+                                <b>Fórmula:</b> {editingLot.formula_name}
+                                <br />
+                                <b>
+                                    {String(
+                                        editingLot.output_type
+                                        || "PRODUCT"
+                                    ).toUpperCase()
+                                        === "RAW_MATERIAL"
+                                        ? "Cantidad ya utilizada:"
+                                        : "Unidades ya utilizadas:"}
+                                </b>{" "}
+                                {formatNumber(
+                                    Number(editingLot.units_produced || 0)
+                                    -
+                                    Number(editingLot.remaining_units || 0)
+                                )}
+                            </p>
+
+                            <div
+                                style={{
+                                    display: "flex",
+                                    flexWrap: "wrap",
+                                    gap: 18
+                                }}
+                            >
+                                <div>
+                                    <label>Fecha de elaboración</label>
+                                    <br />
+                                    <input
+                                        type="date"
+                                        name="production_date"
+                                        value={editForm.production_date}
+                                        onChange={changeEditField}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label>Fecha de vencimiento</label>
+                                    <br />
+                                    <input
+                                        type="date"
+                                        name="expiration_date"
+                                        value={editForm.expiration_date}
+                                        onChange={changeEditField}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label>
+                                        {String(
+                                            editingLot.output_type
+                                            || "PRODUCT"
+                                        ).toUpperCase()
+                                            === "RAW_MATERIAL"
+                                            ? "Cantidad producida"
+                                            : "Unidades producidas"}
+                                    </label>
+                                    <br />
+                                    <input
+                                        type="number"
+                                        name="units_produced"
+                                        value={editForm.units_produced}
+                                        onChange={changeEditField}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label>Horas de producción</label>
+                                    <br />
+                                    <input
+                                        type="number"
+                                        step="0.25"
+                                        name="real_labor_hours"
+                                        value={editForm.real_labor_hours}
+                                        onChange={changeEditField}
+                                    />
+                                </div>
+                            </div>
+
+                            <br />
+
+                            <label>Notas</label>
+                            <br />
+                            <textarea
+                                name="notes"
+                                value={editForm.notes}
+                                onChange={changeEditField}
+                                rows="3"
+                                style={{
+                                    width: "500px",
+                                    maxWidth: "100%"
+                                }}
+                            />
+
+                            <div style={{ marginTop: 16 }}>
+                                <button
+                                    onClick={saveEditedLot}
+                                    disabled={savingEdit}
+                                >
+                                    {savingEdit
+                                        ? "Guardando..."
+                                        : "💾 Guardar cambios"}
+                                </button>
+
+                                <button
+                                    onClick={closeEditLot}
+                                    disabled={savingEdit}
+                                    style={{ marginLeft: 8 }}
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+
+                            <div
+                                style={{
+                                    marginTop: 12,
+                                    fontSize: 13,
+                                    color: "#666"
+                                }}
+                            >
+                                Al cambiar las unidades, el sistema ajustará
+                                solamente la diferencia en el stock.
+                            </div>
+                        </div>
+                    )}
 
                     {expandedLotId && (() => {
                         const lot = lots.find(
@@ -784,8 +1222,14 @@ export default function Lots() {
                                     <b>Producto:</b> {lot.product_name}<br />
                                     <b>Fórmula:</b> {lot.formula_name}<br />
                                     <b>Fecha:</b> {formatDate(lot.production_date)}<br />
-                                    <b>Horas de trabajo:</b> {formatNumber(lot.real_labor_hours)}<br />
-                                    <b>Costo por unidad:</b> {formatMoney(lot.unit_cost)}
+                                    <b>Vencimiento:</b>{" "}
+                                    {lot.expiration_date
+                                        ? formatDate(lot.expiration_date)
+                                        : "Sin fecha"}<br />
+                                    <b>Horas de trabajo:</b>{" "}
+                                    {formatNumber(lot.real_labor_hours)}<br />
+                                    <b>Costo por unidad:</b>{" "}
+                                    {formatMoney(lot.unit_cost)}
                                 </p>
 
                                 <h4>Materias primas utilizadas</h4>
@@ -820,10 +1264,15 @@ export default function Lots() {
                                                 >
                                                     <td>{material.name}</td>
                                                     <td>
-                                                        {formatNumber(material.quantity)} {material.unit}
+                                                        {formatNumber(material.quantity)}{" "}
+                                                        {material.unit}
                                                     </td>
-                                                    <td>{formatMoney(material.unit_cost)}</td>
-                                                    <td>{formatMoney(material.subtotal_cost)}</td>
+                                                    <td>
+                                                        {formatMoney(material.unit_cost)}
+                                                    </td>
+                                                    <td>
+                                                        {formatMoney(material.subtotal_cost)}
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}

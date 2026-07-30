@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
@@ -19,6 +19,27 @@ export default function FormulaEditor({ formula }) {
     const [selectedMaterial, setSelectedMaterial] = useState("");
     const [quantity, setQuantity] = useState("");
 
+    const outputType = String(
+        formula?.output_type
+        || (
+            formula?.output_raw_material_id
+                ? "RAW_MATERIAL"
+                : "PRODUCT"
+        )
+    ).toUpperCase();
+
+    const outputMaterial = materials.find(
+        (material) =>
+            Number(material.id)
+            ===
+            Number(formula?.output_raw_material_id)
+    );
+
+    const outputUnit =
+        outputType === "RAW_MATERIAL"
+            ? outputMaterial?.unit || ""
+            : "unidad";
+
     const formatMoney = (value) =>
         Number(value || 0).toLocaleString("es-AR", {
             style: "currency",
@@ -27,62 +48,117 @@ export default function FormulaEditor({ formula }) {
             maximumFractionDigits: 2
         });
 
-    useEffect(() => {
-        fetch(`${API}/raw-materials`)
-            .then((response) => response.json())
-            .then((data) => {
-                const rawMaterials = Array.isArray(data) ? data : [];
+    const formatNumber = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4
+        });
 
-                setMaterials(
-                    [...rawMaterials].sort((a, b) =>
-                        String(a.name || "").localeCompare(
-                            String(b.name || ""),
-                            "es",
-                            { sensitivity: "base" }
-                        )
-                    )
-                );
-            })
-            .catch(() => setMaterials([]));
+    useEffect(() => {
+        loadMaterials();
     }, []);
 
     useEffect(() => {
         if (formula) {
             loadIngredients();
+        } else {
+            setIngredients([]);
         }
     }, [formula]);
 
-    function loadIngredients() {
-        if (!formula) return;
+    async function loadMaterials() {
+        try {
+            const response = await fetch(`${API}/raw-materials`);
+            const data = await response.json();
+            const rawMaterials = Array.isArray(data) ? data : [];
 
-        fetch(`${API}/formula-items/${formula.id}`)
-            .then((response) => response.json())
-            .then((data) => {
-                const formulaItems = Array.isArray(data) ? data : [];
-
-                setIngredients(
-                    [...formulaItems].sort((a, b) =>
-                        String(a.raw_material?.name || "").localeCompare(
-                            String(b.raw_material?.name || ""),
-                            "es",
-                            { sensitivity: "base" }
-                        )
+            setMaterials(
+                [...rawMaterials].sort((a, b) =>
+                    String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "es",
+                        { sensitivity: "base" }
                     )
-                );
-            })
-            .catch(() => setIngredients([]));
-
-        fetch(`${API}/formula-cost/${formula.id}`)
-            .then((response) => response.json())
-            .then((data) => {
-                if (!data.error) {
-                    setCostData(data);
-                }
-            });
+                )
+            );
+        } catch {
+            setMaterials([]);
+        }
     }
 
+    async function loadIngredients() {
+        if (!formula) return;
+
+        try {
+            const [itemsResponse, costResponse] =
+                await Promise.all([
+                    fetch(`${API}/formula-items/${formula.id}`),
+                    fetch(`${API}/formula-cost/${formula.id}`)
+                ]);
+
+            const [itemsData, costResult] =
+                await Promise.all([
+                    itemsResponse.json(),
+                    costResponse.json()
+                ]);
+
+            const formulaItems =
+                Array.isArray(itemsData)
+                    ? itemsData
+                    : [];
+
+            setIngredients(
+                [...formulaItems].sort((a, b) =>
+                    String(
+                        a.raw_material?.name || ""
+                    ).localeCompare(
+                        String(
+                            b.raw_material?.name || ""
+                        ),
+                        "es",
+                        { sensitivity: "base" }
+                    )
+                )
+            );
+
+            if (!costResult.error) {
+                setCostData(costResult);
+            }
+        } catch {
+            setIngredients([]);
+        }
+    }
+
+    const availableMaterials = useMemo(
+        () =>
+            materials.filter(
+                (material) =>
+                    !(
+                        outputType === "RAW_MATERIAL"
+                        &&
+                        Number(material.id)
+                        ===
+                        Number(formula?.output_raw_material_id)
+                    )
+            ),
+        [
+            materials,
+            outputType,
+            formula?.output_raw_material_id
+        ]
+    );
+
     async function addIngredient() {
-        if (!formula || !selectedMaterial || Number(quantity) <= 0) return;
+        if (
+            !formula
+            ||
+            !selectedMaterial
+            ||
+            Number(quantity) <= 0
+        ) {
+            alert("Seleccioná una materia prima y una cantidad");
+            return;
+        }
 
         const response = await fetch(`${API}/formula-items`, {
             method: "POST",
@@ -91,7 +167,8 @@ export default function FormulaEditor({ formula }) {
             },
             body: JSON.stringify({
                 formula_id: formula.id,
-                raw_material_id: Number(selectedMaterial),
+                raw_material_id:
+                    Number(selectedMaterial),
                 quantity: Number(quantity)
             })
         });
@@ -99,7 +176,11 @@ export default function FormulaEditor({ formula }) {
         const data = await response.json();
 
         if (!response.ok || data.error) {
-            alert(data.error || "No se pudo agregar el ingrediente");
+            alert(
+                data.error
+                ||
+                "No se pudo agregar el ingrediente"
+            );
             return;
         }
 
@@ -109,9 +190,23 @@ export default function FormulaEditor({ formula }) {
     }
 
     async function removeIngredient(itemId) {
-        await fetch(`${API}/formula-items/${itemId}`, {
-            method: "DELETE"
-        });
+        const response = await fetch(
+            `${API}/formula-items/${itemId}`,
+            {
+                method: "DELETE"
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+            alert(
+                data.error
+                ||
+                "No se pudo eliminar el ingrediente"
+            );
+            return;
+        }
 
         loadIngredients();
     }
@@ -129,44 +224,86 @@ export default function FormulaEditor({ formula }) {
         <div style={styles.card}>
             <h2>🧪 {formula.name}</h2>
 
+            <p>
+                <b>Resultado:</b>{" "}
+                {outputType === "RAW_MATERIAL"
+                    ? (
+                        outputMaterial?.name
+                        ||
+                        "Materia prima elaborada"
+                    )
+                    : "Producto terminado"}
+            </p>
+
             <div style={styles.costGrid}>
                 <div style={styles.costBox}>
                     <span>Materias primas</span>
-                    <strong>{formatMoney(costData.materias_primas)}</strong>
+                    <strong>
+                        {formatMoney(costData.materias_primas)}
+                    </strong>
                 </div>
 
                 <div style={styles.costBox}>
                     <span>Mano de obra</span>
-                    <strong>{formatMoney(costData.mano_obra)}</strong>
-                    <small>{costData.horas_trabajo || 0} horas</small>
+                    <strong>
+                        {formatMoney(costData.mano_obra)}
+                    </strong>
+                    <small>
+                        {costData.horas_trabajo || 0} horas
+                    </small>
                 </div>
 
                 <div style={styles.costBox}>
                     <span>Costo total del lote</span>
-                    <strong>{formatMoney(costData.costo_total)}</strong>
+                    <strong>
+                        {formatMoney(costData.costo_total)}
+                    </strong>
                 </div>
 
                 <div style={styles.costBox}>
-                    <span>Costo por unidad</span>
-                    <strong>{formatMoney(costData.costo_unitario)}</strong>
+                    <span>
+                        Costo por {outputUnit || "unidad"}
+                    </span>
+                    <strong>
+                        {formatMoney(costData.costo_unitario)}
+                    </strong>
                 </div>
 
-                <div style={styles.priceBox}>
-                    <span>
-                        Precio estimado con margen de{" "}
-                        {Number(costData.margen_rentabilidad || 0).toLocaleString(
-                            "es-AR",
-                            { maximumFractionDigits: 2 }
-                        )}%
-                    </span>
-                    <strong>{formatMoney(costData.precio_estimado)}</strong>
-                </div>
+                {outputType === "PRODUCT" && (
+                    <div style={styles.priceBox}>
+                        <span>
+                            Precio estimado con margen de{" "}
+                            {Number(
+                                costData.margen_rentabilidad || 0
+                            ).toLocaleString(
+                                "es-AR",
+                                { maximumFractionDigits: 2 }
+                            )}%
+                        </span>
+                        <strong>
+                            {formatMoney(
+                                costData.precio_estimado
+                            )}
+                        </strong>
+                    </div>
+                )}
             </div>
 
             <p>
-                <b>Lote estándar:</b> {formula.batch_size}
+                <b>Lote estándar:</b>{" "}
+                {formatNumber(formula.batch_size)}
                 {" · "}
-                <b>Unidades:</b> {formula.units_produced}
+                <b>
+                    {outputType === "RAW_MATERIAL"
+                        ? "Rendimiento estimado"
+                        : "Unidades"}
+                    :
+                </b>{" "}
+                {formatNumber(formula.units_produced)}
+                {outputType === "RAW_MATERIAL"
+                    && outputUnit
+                    ? ` ${outputUnit}`
+                    : ""}
             </p>
 
             <hr />
@@ -179,10 +316,19 @@ export default function FormulaEditor({ formula }) {
                     setSelectedMaterial(event.target.value)
                 }
             >
-                <option value="">Seleccionar materia prima...</option>
-                {materials.map((material) => (
-                    <option key={material.id} value={material.id}>
-                        {material.code} - {material.name}
+                <option value="">
+                    Seleccionar materia prima...
+                </option>
+
+                {availableMaterials.map((material) => (
+                    <option
+                        key={material.id}
+                        value={material.id}
+                    >
+                        {material.name}
+                        {Number(material.is_intermediate) === 1
+                            ? " (elaborada)"
+                            : ""}
                     </option>
                 ))}
             </select>
@@ -193,11 +339,16 @@ export default function FormulaEditor({ formula }) {
                 step="any"
                 placeholder="Cantidad"
                 value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
+                onChange={(event) =>
+                    setQuantity(event.target.value)
+                }
                 style={{ marginLeft: 10 }}
             />
 
-            <button onClick={addIngredient} style={{ marginLeft: 10 }}>
+            <button
+                onClick={addIngredient}
+                style={{ marginLeft: 10 }}
+            >
                 ➕ Agregar
             </button>
 
@@ -216,33 +367,67 @@ export default function FormulaEditor({ formula }) {
                         <th></th>
                     </tr>
                 </thead>
-                <tbody>
-                    {ingredients.map((item) => {
-                        const unitCost = Number(
-                            item.raw_material?.cost || 0
-                        );
-                        const usedCost =
-                            Number(item.quantity || 0) * unitCost;
 
-                        return (
-                            <tr key={item.id}>
-                                <td>{item.raw_material?.name}</td>
-                                <td>{item.quantity}</td>
-                                <td>{item.raw_material?.unit}</td>
-                                <td>{formatMoney(unitCost)}</td>
-                                <td>{formatMoney(usedCost)}</td>
-                                <td>
-                                    <button
-                                        onClick={() =>
-                                            removeIngredient(item.id)
-                                        }
-                                    >
-                                        🗑
-                                    </button>
-                                </td>
-                            </tr>
-                        );
-                    })}
+                <tbody>
+                    {ingredients.length === 0 ? (
+                        <tr>
+                            <td
+                                colSpan="6"
+                                style={{ textAlign: "center" }}
+                            >
+                                No hay ingredientes cargados.
+                            </td>
+                        </tr>
+                    ) : (
+                        ingredients.map((item) => {
+                            const unitCost = Number(
+                                item.raw_material?.cost || 0
+                            );
+
+                            const usedCost =
+                                Number(item.quantity || 0)
+                                *
+                                unitCost;
+
+                            return (
+                                <tr key={item.id}>
+                                    <td>
+                                        {item.raw_material?.name}
+                                        {Number(
+                                            item.raw_material
+                                                ?.is_intermediate
+                                            || 0
+                                        ) === 1
+                                            ? " (elaborada)"
+                                            : ""}
+                                    </td>
+                                    <td>
+                                        {formatNumber(item.quantity)}
+                                    </td>
+                                    <td>
+                                        {item.raw_material?.unit}
+                                    </td>
+                                    <td>
+                                        {formatMoney(unitCost)}
+                                    </td>
+                                    <td>
+                                        {formatMoney(usedCost)}
+                                    </td>
+                                    <td>
+                                        <button
+                                            onClick={() =>
+                                                removeIngredient(
+                                                    item.id
+                                                )
+                                            }
+                                        >
+                                            🗑
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })
+                    )}
                 </tbody>
             </table>
         </div>
