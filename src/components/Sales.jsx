@@ -1,168 +1,244 @@
 import { useEffect, useMemo, useState } from "react";
 import SaleHistory from "./SaleHistory";
 
-const API_URL = "http://127.0.0.1:8000";
+const API = "http://127.0.0.1:8000";
 
-const STOCK_MOVEMENT_REASONS = [
-    { value: "STOCK_CONTROL", label: "Control de stock" },
-    { value: "LOT_TEST", label: "Testeo de lote" },
-    { value: "PERSONAL_USE", label: "Consumo personal" },
-    { value: "GIFT", label: "Regalo u obsequio" }
-];
-
-const cardStyle = {
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: 20,
-    marginTop: 20
-};
-
-const inputStyle = {
-    width: 300,
-    maxWidth: "100%",
-    padding: 8,
-    marginTop: 5
-};
-
-const moneyFormatter = new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS"
-});
+const initialDate = () => new Date().toISOString().substring(0, 10);
 
 export default function Sales() {
-    const today = new Date().toISOString().substring(0, 10);
-
-    // ==========================
-    // VENTAS
-    // ==========================
-
     const [client, setClient] = useState("");
-    const [date, setDate] = useState(today);
+    const [date, setDate] = useState(initialDate());
     const [paymentMethod, setPaymentMethod] = useState("Caja");
-    const [selectedProduct, setSelectedProduct] = useState("");
-    const [items, setItems] = useState([]);
-    const [savingSale, setSavingSale] = useState(false);
-
-    // ==========================
-    // AJUSTES DE STOCK
-    // ==========================
-
-    const [movementType, setMovementType] = useState("OUT");
-    const [movementDate, setMovementDate] = useState(today);
-    const [movementReason, setMovementReason] = useState("STOCK_CONTROL");
-    const [movementNotes, setMovementNotes] = useState("");
-    const [movementSelectedProduct, setMovementSelectedProduct] = useState("");
-    const [movementItems, setMovementItems] = useState([]);
-    const [stockMovements, setStockMovements] = useState([]);
-    const [savingMovement, setSavingMovement] = useState(false);
+    const [shippingCost, setShippingCost] = useState("");
 
     const [products, setProducts] = useState([]);
+    const [selectedProduct, setSelectedProduct] = useState("");
+    const [items, setItems] = useState([]);
 
-    const sortedProducts = useMemo(
-        () =>
-            [...products].sort((a, b) =>
-                String(a.name || "").localeCompare(
-                    String(b.name || ""),
-                    "es",
-                    { sensitivity: "base" }
-                )
-            ),
-        [products]
-    );
+    const [rawMaterials, setRawMaterials] = useState([]);
+    const [returnedMaterialId, setReturnedMaterialId] = useState("");
+    const [returnedQuantity, setReturnedQuantity] = useState("1");
+    const [returnedContainers, setReturnedContainers] = useState([]);
+
+    const [sales, setSales] = useState([]);
+    const [historyVersion, setHistoryVersion] = useState(0);
+    const [editingSaleId, setEditingSaleId] = useState(null);
+    const [editingSaleNumber, setEditingSaleNumber] = useState("");
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        loadProducts();
-        loadStockMovements();
+        loadAll();
     }, []);
+
+    async function loadAll() {
+        await Promise.all([
+            loadProducts(),
+            loadRawMaterials(),
+            loadSalesForClients()
+        ]);
+    }
 
     async function loadProducts() {
         try {
-            const response = await fetch(`${API_URL}/products`);
+            const response = await fetch(`${API}/products`);
             const data = await response.json();
-
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudieron cargar los productos"
-                );
-            }
-
             setProducts(Array.isArray(data) ? data : []);
-        } catch (error) {
-            alert(error.message);
+        } catch {
+            setProducts([]);
         }
     }
 
-    async function loadStockMovements() {
+    async function loadRawMaterials() {
         try {
-            const response = await fetch(`${API_URL}/stock-movements`);
+            const response = await fetch(`${API}/raw-materials`);
             const data = await response.json();
+            const list = Array.isArray(data) ? data : [];
 
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudieron cargar los ajustes de stock"
-                );
+            setRawMaterials(
+                [...list].sort((a, b) =>
+                    String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "es",
+                        { sensitivity: "base" }
+                    )
+                )
+            );
+        } catch {
+            setRawMaterials([]);
+        }
+    }
+
+    async function loadSalesForClients() {
+        try {
+            const response = await fetch(`${API}/sales`);
+            const data = await response.json();
+            setSales(Array.isArray(data) ? data : []);
+        } catch {
+            setSales([]);
+        }
+    }
+
+    const clientOptions = useMemo(() => {
+        const names = new Map();
+
+        sales.forEach((sale) => {
+            const name = String(sale.client || "").trim();
+
+            if (!name || name.toLowerCase() === "consumidor final") {
+                return;
             }
 
-            setStockMovements(Array.isArray(data) ? data : []);
-        } catch (error) {
-            console.error(error);
-        }
-    }
+            names.set(name.toLocaleLowerCase("es"), name);
+        });
 
-    // ==========================
-    // FUNCIONES DE VENTA
-    // ==========================
+        return [...names.values()].sort((a, b) =>
+            a.localeCompare(b, "es", { sensitivity: "base" })
+        );
+    }, [sales]);
+
+    const productsSubtotal = items.reduce(
+        (sum, item) =>
+            sum
+            + Number(item.quantity || 0)
+            * Number(item.price || 0),
+        0
+    );
+
+    const total = productsSubtotal + Number(shippingCost || 0);
 
     function addProduct() {
-        if (selectedProduct === "") return;
+        if (!selectedProduct) {
+            return;
+        }
 
         const product = products.find(
-            (item) => item.id === Number(selectedProduct)
+            (item) => Number(item.id) === Number(selectedProduct)
         );
 
-        if (!product) return;
+        if (!product) {
+            return;
+        }
 
-        const existingIndex = items.findIndex(
-            (item) => item.id === product.id
-        );
+        setItems((current) => {
+            const existing = current.find(
+                (item) => Number(item.id) === Number(product.id)
+            );
 
-        if (existingIndex >= 0) {
-            const copy = [...items];
+            if (existing) {
+                return current.map((item) =>
+                    Number(item.id) === Number(product.id)
+                        ? {
+                            ...item,
+                            quantity: Number(item.quantity || 0) + 1
+                        }
+                        : item
+                );
+            }
 
-            copy[existingIndex] = {
-                ...copy[existingIndex],
-                quantity: Number(copy[existingIndex].quantity || 0) + 1
-            };
-
-            setItems(copy);
-        } else {
-            setItems([
-                ...items,
+            return [
+                ...current,
                 {
                     ...product,
-                    quantity: 1
+                    quantity: 1,
+                    price: Number(product.price || 0)
                 }
-            ]);
-        }
+            ];
+        });
 
         setSelectedProduct("");
     }
 
-    function removeSaleItem(index) {
-        setItems(
-            items.filter((_, itemIndex) => itemIndex !== index)
+    function updateItem(index, field, value) {
+        setItems((current) =>
+            current.map((item, itemIndex) =>
+                itemIndex === index
+                    ? {
+                        ...item,
+                        [field]: Number(value)
+                    }
+                    : item
+            )
         );
     }
 
-    function updateSaleItem(index, field, value) {
-        const copy = [...items];
+    function removeItem(index) {
+        setItems((current) =>
+            current.filter((_, itemIndex) => itemIndex !== index)
+        );
+    }
 
-        copy[index] = {
-            ...copy[index],
-            [field]: Number(value)
-        };
+    function addReturnedContainer() {
+        const quantity = Number(returnedQuantity || 0);
 
-        setItems(copy);
+        if (!returnedMaterialId) {
+            alert("Seleccioná el envase devuelto");
+            return;
+        }
+
+        if (quantity <= 0) {
+            alert("La cantidad devuelta debe ser mayor a cero");
+            return;
+        }
+
+        const material = rawMaterials.find(
+            (item) => Number(item.id) === Number(returnedMaterialId)
+        );
+
+        if (!material) {
+            return;
+        }
+
+        setReturnedContainers((current) => {
+            const existing = current.find(
+                (item) =>
+                    Number(item.raw_material_id) === Number(material.id)
+            );
+
+            if (existing) {
+                return current.map((item) =>
+                    Number(item.raw_material_id) === Number(material.id)
+                        ? {
+                            ...item,
+                            quantity: Number(item.quantity || 0) + quantity
+                        }
+                        : item
+                );
+            }
+
+            return [
+                ...current,
+                {
+                    raw_material_id: material.id,
+                    name: material.name,
+                    unit: material.unit || "unid.",
+                    quantity
+                }
+            ];
+        });
+
+        setReturnedMaterialId("");
+        setReturnedQuantity("1");
+    }
+
+    function removeReturnedContainer(index) {
+        setReturnedContainers((current) =>
+            current.filter((_, itemIndex) => itemIndex !== index)
+        );
+    }
+
+    function cleanSaleItems() {
+        return items.map((item) => ({
+            product_id: Number(item.id || item.product_id),
+            quantity: Number(item.quantity || 0),
+            price: Number(item.price || 0)
+        }));
+    }
+
+    function cleanReturnedContainers() {
+        return returnedContainers.map((item) => ({
+            raw_material_id: Number(item.raw_material_id),
+            quantity: Number(item.quantity || 0)
+        }));
     }
 
     async function saveSale() {
@@ -171,344 +247,254 @@ export default function Sales() {
             return;
         }
 
-        if (
-            items.some(
-                (item) =>
-                    Number(item.quantity) <= 0 ||
-                    Number(item.price) < 0
-            )
-        ) {
-            alert("Revisá las cantidades y los precios");
+        if (items.some((item) => Number(item.quantity || 0) <= 0)) {
+            alert("Las cantidades deben ser mayores a cero");
             return;
         }
 
-        setSavingSale(true);
+        if (Number(shippingCost || 0) < 0) {
+            alert("El costo de envío no puede ser negativo");
+            return;
+        }
+
+        setSaving(true);
 
         try {
-            const response = await fetch(`${API_URL}/sales`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    client: client || "Consumidor final",
-                    date,
-                    payment_method: paymentMethod
-                })
-            });
+            const commonData = {
+                client: client.trim() || "Consumidor final",
+                date,
+                payment_method: paymentMethod,
+                shipping_cost: Number(shippingCost || 0),
+                returned_containers: cleanReturnedContainers()
+            };
 
-            const sale = await response.json();
+            let result;
 
-            if (!response.ok || sale.error) {
-                throw new Error(
-                    sale.error || "Error al crear la venta"
+            if (editingSaleId) {
+                const response = await fetch(
+                    `${API}/sales/${editingSaleId}`,
+                    {
+                        method: "PUT",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            ...commonData,
+                            items: cleanSaleItems()
+                        })
+                    }
                 );
-            }
 
-            const itemsResponse = await fetch(
-                `${API_URL}/sale-items`,
-                {
+                result = await response.json();
+
+                if (!response.ok || result.error) {
+                    throw new Error(
+                        result.error || "No se pudo modificar la venta"
+                    );
+                }
+            } else {
+                const saleResponse = await fetch(`${API}/sales`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(commonData)
+                });
+
+                const sale = await saleResponse.json();
+
+                if (!saleResponse.ok || sale.error) {
+                    throw new Error(
+                        sale.error || "No se pudo crear la venta"
+                    );
+                }
+
+                const itemsResponse = await fetch(`${API}/sale-items`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         sale_id: sale.id,
-                        items: items.map((item) => ({
-                            product_id: item.id,
-                            quantity: Number(item.quantity),
-                            price: Number(item.price)
-                        }))
+                        items: cleanSaleItems(),
+                        shipping_cost: Number(shippingCost || 0),
+                        returned_containers: cleanReturnedContainers()
                     })
+                });
+
+                result = await itemsResponse.json();
+
+                if (!itemsResponse.ok || result.error) {
+                    throw new Error(
+                        result.error || "No se pudo completar la venta"
+                    );
                 }
-            );
-
-            const result = await itemsResponse.json();
-
-            if (!itemsResponse.ok || result.error) {
-                throw new Error(
-                    result.error || "No se pudo guardar la venta"
-                );
             }
 
-            let message = "✅ Venta guardada correctamente";
+            let message = editingSaleId
+                ? "✅ Venta modificada correctamente"
+                : "✅ Venta guardada correctamente";
 
             if (result.advertencia) {
-                message += `\n\n${result.advertencia}`;
+                message += `\n\n⚠️ ${result.advertencia}`;
             }
 
             alert(message);
-
-            setItems([]);
-            setClient("");
-            setPaymentMethod("Caja");
-
-            await loadProducts();
+            resetForm();
+            await loadAll();
+            setHistoryVersion((value) => value + 1);
         } catch (error) {
-            alert(error.message);
+            alert(`❌ ${error.message}`);
         } finally {
-            setSavingSale(false);
+            setSaving(false);
         }
     }
 
-    // ==========================
-    // FUNCIONES DE AJUSTE DE STOCK
-    // ==========================
-
-    function changeMovementType(value) {
-        setMovementType(value);
-        setMovementItems([]);
-
-        if (value === "IN") {
-            setMovementReason("STOCK_CONTROL");
-        }
-    }
-
-    function addMovementProduct() {
-        if (movementSelectedProduct === "") return;
-
-        const product = products.find(
-            (item) => item.id === Number(movementSelectedProduct)
+    function startEditSale(sale) {
+        setEditingSaleId(sale.id);
+        setEditingSaleNumber(sale.number || "");
+        setClient(sale.client || "");
+        setDate(String(sale.date || initialDate()).substring(0, 10));
+        setPaymentMethod(sale.payment_method || "Caja");
+        setShippingCost(
+            Number(sale.shipping_cost || 0) > 0
+                ? String(sale.shipping_cost)
+                : ""
         );
 
-        if (!product) return;
-
-        const existingIndex = movementItems.findIndex(
-            (item) => item.id === product.id
+        setItems(
+            (sale.items || []).map((item) => ({
+                id: item.product_id,
+                product_id: item.product_id,
+                name: item.name,
+                quantity: Number(item.quantity || 0),
+                price: Number(item.price || 0)
+            }))
         );
 
-        if (existingIndex >= 0) {
-            const copy = [...movementItems];
-
-            copy[existingIndex] = {
-                ...copy[existingIndex],
-                quantity: Number(copy[existingIndex].quantity || 0) + 1
-            };
-
-            setMovementItems(copy);
-        } else {
-            setMovementItems([
-                ...movementItems,
-                {
-                    ...product,
-                    quantity: 1
-                }
-            ]);
-        }
-
-        setMovementSelectedProduct("");
-    }
-
-    function removeMovementItem(index) {
-        setMovementItems(
-            movementItems.filter(
-                (_, itemIndex) => itemIndex !== index
-            )
-        );
-    }
-
-    function updateMovementQuantity(index, value) {
-        const copy = [...movementItems];
-
-        copy[index] = {
-            ...copy[index],
-            quantity: Number(value)
-        };
-
-        setMovementItems(copy);
-    }
-
-    async function saveStockMovement() {
-        if (movementItems.length === 0) {
-            alert("Agregá al menos un producto");
-            return;
-        }
-
-        if (
-            movementItems.some(
-                (item) => Number(item.quantity) <= 0
-            )
-        ) {
-            alert("Las cantidades deben ser mayores a cero");
-            return;
-        }
-
-        const actionName =
-            movementType === "IN" ? "alta" : "baja";
-
-        const confirmed = window.confirm(
-            `¿Guardar esta ${actionName} de stock?`
+        setReturnedContainers(
+            (sale.returned_containers || []).map((item) => ({
+                raw_material_id: item.raw_material_id,
+                name: item.name,
+                unit: item.unit || "unid.",
+                quantity: Number(item.quantity || 0)
+            }))
         );
 
-        if (!confirmed) return;
-
-        setSavingMovement(true);
-
-        try {
-            const response = await fetch(
-                `${API_URL}/stock-movements`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        movement_type: movementType,
-                        date: movementDate,
-                        reason:
-                            movementType === "IN"
-                                ? "STOCK_CONTROL"
-                                : movementReason,
-                        notes: movementNotes,
-                        items: movementItems.map((item) => ({
-                            product_id: item.id,
-                            quantity: Number(item.quantity)
-                        }))
-                    })
-                }
-            );
-
-            const result = await response.json();
-
-            if (!response.ok || result.error) {
-                throw new Error(
-                    result.error ||
-                    `No se pudo guardar la ${actionName} de stock`
-                );
-            }
-
-            let message =
-                `✅ ${result.message}\n` +
-                `Costo contabilizado: ${moneyFormatter.format(
-                    Number(result.total_cost || 0)
-                )}`;
-
-            if (result.advertencia) {
-                message += `\n\n${result.advertencia}`;
-            }
-
-            alert(message);
-
-            setMovementItems([]);
-            setMovementNotes("");
-            setMovementReason("STOCK_CONTROL");
-
-            await Promise.all([
-                loadProducts(),
-                loadStockMovements()
-            ]);
-        } catch (error) {
-            alert(error.message);
-        } finally {
-            setSavingMovement(false);
-        }
+        window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    async function deleteStockMovement(movement) {
-        const type =
-            String(movement.movement_type || "OUT").toUpperCase();
-
-        const actionName =
-            type === "IN" ? "alta" : "baja";
-
-        const explanation =
-            type === "IN"
-                ? "Se descontarán las unidades agregadas y se eliminará el lote creado por el ajuste. Solo se podrá eliminar si esas unidades todavía no fueron utilizadas."
-                : "Se devolverán las unidades a los productos y a sus lotes.";
-
-        const confirmed = window.confirm(
-            `¿Eliminar la ${actionName} ${movement.number}?\n\n` +
-            explanation +
-            "\nTambién se eliminará el asiento contable automático."
-        );
-
-        if (!confirmed) return;
-
-        try {
-            const response = await fetch(
-                `${API_URL}/stock-movements/${movement.id}`,
-                {
-                    method: "DELETE"
-                }
-            );
-
-            const result = await response.json();
-
-            if (!response.ok || result.error) {
-                throw new Error(
-                    result.error ||
-                    `No se pudo eliminar la ${actionName} de stock`
-                );
-            }
-
-            alert(`✅ ${result.message}`);
-
-            await Promise.all([
-                loadProducts(),
-                loadStockMovements()
-            ]);
-        } catch (error) {
-            alert(error.message);
-        }
+    function resetForm() {
+        setEditingSaleId(null);
+        setEditingSaleNumber("");
+        setClient("");
+        setDate(initialDate());
+        setPaymentMethod("Caja");
+        setShippingCost("");
+        setSelectedProduct("");
+        setItems([]);
+        setReturnedMaterialId("");
+        setReturnedQuantity("1");
+        setReturnedContainers([]);
     }
 
-    const movementActionLabel =
-        movementType === "IN" ? "alta" : "baja";
+    async function historyChanged() {
+        await loadAll();
+        setHistoryVersion((value) => value + 1);
+    }
 
     return (
         <div>
-            <h2>🧾 Ventas y movimientos de stock</h2>
+            <h2>🧾 Ventas</h2>
 
-            <div style={cardStyle}>
-                <h3>Nueva venta</h3>
+            <div style={styles.card}>
+                <div style={styles.formHeader}>
+                    <h3 style={{ margin: 0 }}>
+                        {editingSaleId
+                            ? `✏️ Editar venta ${editingSaleNumber}`
+                            : "Nueva Venta"}
+                    </h3>
 
-                <label>Cliente</label>
-                <br />
-                <input
-                    value={client}
-                    onChange={(event) =>
-                        setClient(event.target.value)
-                    }
-                    placeholder="Consumidor final"
-                    style={inputStyle}
-                />
+                    {editingSaleId && (
+                        <button
+                            onClick={resetForm}
+                            disabled={saving}
+                        >
+                            Cancelar edición
+                        </button>
+                    )}
+                </div>
 
-                <br /><br />
+                <div style={styles.formGrid}>
+                    <div>
+                        <label>Cliente</label>
+                        <br />
+                        <input
+                            value={client}
+                            onChange={(event) => setClient(event.target.value)}
+                            list="nativa-clientes"
+                            placeholder="Consumidor final"
+                            style={styles.input}
+                        />
+                        <datalist id="nativa-clientes">
+                            {clientOptions.map((name) => (
+                                <option key={name} value={name} />
+                            ))}
+                        </datalist>
+                        <div style={styles.helpText}>
+                            Escribí una letra para ver clientes anteriores.
+                        </div>
+                    </div>
 
-                <label>Fecha</label>
-                <br />
-                <input
-                    type="date"
-                    value={date}
-                    onChange={(event) =>
-                        setDate(event.target.value)
-                    }
-                    style={{
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                />
+                    <div>
+                        <label>Fecha</label>
+                        <br />
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(event) => setDate(event.target.value)}
+                            style={styles.input}
+                        />
+                    </div>
 
-                <br /><br />
+                    <div>
+                        <label>Medio de pago</label>
+                        <br />
+                        <select
+                            value={paymentMethod}
+                            onChange={(event) =>
+                                setPaymentMethod(event.target.value)
+                            }
+                            style={styles.input}
+                        >
+                            <option value="Caja">Caja</option>
+                            <option value="Banco">Banco</option>
+                            <option value="Mercado Pago">Mercado Pago</option>
+                            <option value="Tarjeta de crédito">
+                                Tarjeta de crédito
+                            </option>
+                            <option value="Cuenta corriente">
+                                Cuenta corriente
+                            </option>
+                        </select>
+                    </div>
 
-                <label>Medio de pago</label>
-                <br />
-                <select
-                    value={paymentMethod}
-                    onChange={(event) =>
-                        setPaymentMethod(event.target.value)
-                    }
-                    style={inputStyle}
-                >
-                    <option value="Caja">Caja</option>
-                    <option value="Banco">Banco</option>
-                    <option value="Mercado Pago">
-                        Mercado Pago
-                    </option>
-                    <option value="Cuenta corriente">
-                        Cuenta corriente
-                    </option>
-                </select>
+                    <div>
+                        <label>Costo de envío cobrado</label>
+                        <br />
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={shippingCost}
+                            onChange={(event) =>
+                                setShippingCost(event.target.value)
+                            }
+                            placeholder="0"
+                            style={styles.input}
+                        />
+                    </div>
+                </div>
 
                 <hr style={{ margin: "25px 0" }} />
 
@@ -519,464 +505,266 @@ export default function Sales() {
                     onChange={(event) =>
                         setSelectedProduct(event.target.value)
                     }
-                    style={{
-                        width: 350,
-                        maxWidth: "100%",
-                        padding: 8
-                    }}
+                    style={{ ...styles.input, width: 360 }}
                 >
-                    <option value="">
-                        Seleccionar producto
-                    </option>
-
-                    {sortedProducts.map((product) => (
-                        <option
-                            key={product.id}
-                            value={product.id}
-                        >
-                            {product.name} — Stock:{" "}
-                            {Number(product.stock || 0)}
+                    <option value="">Seleccionar producto</option>
+                    {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                            {product.name} — stock {Number(product.stock || 0)}
                         </option>
                     ))}
                 </select>
 
-                <button
-                    type="button"
-                    onClick={addProduct}
-                    style={{ marginLeft: 10 }}
-                >
+                <button onClick={addProduct} style={{ marginLeft: 10 }}>
                     ➕ Agregar producto
                 </button>
 
-                <hr />
-
-                <h3>Productos agregados</h3>
-
-                {items.length === 0 && (
-                    <p>No hay productos agregados.</p>
-                )}
-
-                {items.map((item, index) => (
-                    <div
-                        key={item.id}
-                        style={{
-                            border: "1px solid #ddd",
-                            borderRadius: 8,
-                            padding: 15,
-                            marginBottom: 10
-                        }}
-                    >
-                        <h4>{item.name}</h4>
-
-                        <div
-                            style={{
-                                display: "flex",
-                                gap: 20,
-                                alignItems: "end",
-                                flexWrap: "wrap"
-                            }}
-                        >
-                            <div>
-                                <label>Cantidad</label>
-                                <br />
-                                <input
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    value={item.quantity}
-                                    onChange={(event) =>
-                                        updateSaleItem(
-                                            index,
-                                            "quantity",
-                                            event.target.value
-                                        )
-                                    }
-                                    style={{ width: 100 }}
-                                />
-                            </div>
-
-                            <div>
-                                <label>Precio</label>
-                                <br />
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={item.price}
-                                    onChange={(event) =>
-                                        updateSaleItem(
-                                            index,
-                                            "price",
-                                            event.target.value
-                                        )
-                                    }
-                                    style={{ width: 120 }}
-                                />
-                            </div>
-
-                            <div>
-                                <label>Subtotal</label>
-                                <br />
-                                <b>
-                                    {moneyFormatter.format(
-                                        Number(item.quantity || 0) *
-                                        Number(item.price || 0)
-                                    )}
-                                </b>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    removeSaleItem(index)
-                                }
-                            >
-                                🗑️ Quitar
-                            </button>
-                        </div>
-                    </div>
-                ))}
-
-                <hr />
-
-                <h2>
-                    Total:{" "}
-                    {moneyFormatter.format(
-                        items.reduce(
-                            (sum, item) =>
-                                sum +
-                                Number(item.quantity || 0) *
-                                Number(item.price || 0),
-                            0
-                        )
+                <div style={{ marginTop: 18 }}>
+                    {items.length === 0 && (
+                        <p>No hay productos agregados.</p>
                     )}
-                </h2>
 
-                <button
-                    type="button"
-                    onClick={saveSale}
-                    disabled={savingSale}
-                >
-                    {savingSale
-                        ? "Guardando..."
-                        : "💾 Guardar venta"}
-                </button>
-            </div>
+                    {items.map((item, index) => (
+                        <div key={`${item.id}-${index}`} style={styles.itemCard}>
+                            <strong>{item.name}</strong>
 
-            <div style={cardStyle}>
-                <h3>📦 Ajuste de stock</h3>
-
-                <p>
-                    Usá <b>Alta</b> cuando el conteo físico tenga más
-                    unidades que el sistema, y <b>Baja</b> cuando tenga
-                    menos o cuando retires productos por otro motivo.
-                </p>
-
-                <label>Tipo de ajuste</label>
-                <br />
-                <select
-                    value={movementType}
-                    onChange={(event) =>
-                        changeMovementType(event.target.value)
-                    }
-                    style={inputStyle}
-                >
-                    <option value="OUT">
-                        Baja — descontar stock
-                    </option>
-                    <option value="IN">
-                        Alta — agregar stock
-                    </option>
-                </select>
-
-                <br /><br />
-
-                <label>Fecha</label>
-                <br />
-                <input
-                    type="date"
-                    value={movementDate}
-                    onChange={(event) =>
-                        setMovementDate(event.target.value)
-                    }
-                    style={{
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                />
-
-                <br /><br />
-
-                <label>Motivo</label>
-                <br />
-                <select
-                    value={
-                        movementType === "IN"
-                            ? "STOCK_CONTROL"
-                            : movementReason
-                    }
-                    onChange={(event) =>
-                        setMovementReason(event.target.value)
-                    }
-                    disabled={movementType === "IN"}
-                    style={inputStyle}
-                >
-                    {STOCK_MOVEMENT_REASONS.map((reason) => (
-                        <option
-                            key={reason.value}
-                            value={reason.value}
-                        >
-                            {reason.label}
-                        </option>
-                    ))}
-                </select>
-
-                {movementType === "IN" && (
-                    <div
-                        style={{
-                            marginTop: 6,
-                            fontSize: 13,
-                            color: "#666"
-                        }}
-                    >
-                        Las altas se registran únicamente por control de stock.
-                    </div>
-                )}
-
-                <br /><br />
-
-                <label>Observación</label>
-                <br />
-                <textarea
-                    value={movementNotes}
-                    onChange={(event) =>
-                        setMovementNotes(event.target.value)
-                    }
-                    placeholder={
-                        movementType === "IN"
-                            ? "Ejemplo: sobrante encontrado durante el conteo físico"
-                            : "Detalle del control, destinatario del regalo o prueba realizada"
-                    }
-                    style={{
-                        width: "100%",
-                        maxWidth: 650,
-                        minHeight: 75,
-                        padding: 8,
-                        marginTop: 5
-                    }}
-                />
-
-                <hr style={{ margin: "25px 0" }} />
-
-                <h3>
-                    Productos a{" "}
-                    {movementType === "IN"
-                        ? "agregar"
-                        : "descontar"}
-                </h3>
-
-                <select
-                    value={movementSelectedProduct}
-                    onChange={(event) =>
-                        setMovementSelectedProduct(
-                            event.target.value
-                        )
-                    }
-                    style={{
-                        width: 350,
-                        maxWidth: "100%",
-                        padding: 8
-                    }}
-                >
-                    <option value="">
-                        Seleccionar producto
-                    </option>
-
-                    {sortedProducts.map((product) => (
-                        <option
-                            key={product.id}
-                            value={product.id}
-                        >
-                            {product.name} — Stock actual:{" "}
-                            {Number(product.stock || 0)}
-                        </option>
-                    ))}
-                </select>
-
-                <button
-                    type="button"
-                    onClick={addMovementProduct}
-                    style={{ marginLeft: 10 }}
-                >
-                    ➕ Agregar producto
-                </button>
-
-                <hr />
-
-                {movementItems.length === 0 && (
-                    <p>No hay productos agregados.</p>
-                )}
-
-                {movementItems.map((item, index) => (
-                    <div
-                        key={item.id}
-                        style={{
-                            border: "1px solid #ddd",
-                            borderRadius: 8,
-                            padding: 15,
-                            marginBottom: 10
-                        }}
-                    >
-                        <h4>{item.name}</h4>
-
-                        <div
-                            style={{
-                                display: "flex",
-                                gap: 20,
-                                alignItems: "end",
-                                flexWrap: "wrap"
-                            }}
-                        >
-                            <div>
-                                <label>Cantidad</label>
-                                <br />
-                                <input
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    value={item.quantity}
-                                    onChange={(event) =>
-                                        updateMovementQuantity(
-                                            index,
-                                            event.target.value
-                                        )
-                                    }
-                                    style={{ width: 100 }}
-                                />
-                            </div>
-
-                            <div>
-                                Stock actual:{" "}
-                                <b>
-                                    {Number(item.stock || 0)}
-                                </b>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    removeMovementItem(index)
-                                }
-                            >
-                                🗑️ Quitar
-                            </button>
-                        </div>
-                    </div>
-                ))}
-
-                <button
-                    type="button"
-                    onClick={saveStockMovement}
-                    disabled={savingMovement}
-                >
-                    {savingMovement
-                        ? "Guardando..."
-                        : `💾 Guardar ${movementActionLabel} de stock`}
-                </button>
-            </div>
-
-            <div style={cardStyle}>
-                <h3>Historial de ajustes de stock</h3>
-
-                {stockMovements.length === 0 && (
-                    <p>No hay ajustes de stock registrados.</p>
-                )}
-
-                {stockMovements.map((movement) => {
-                    const type =
-                        String(
-                            movement.movement_type || "OUT"
-                        ).toUpperCase();
-
-                    const actionName =
-                        type === "IN" ? "Alta" : "Baja";
-
-                    return (
-                        <div
-                            key={movement.id}
-                            style={{
-                                borderBottom: "1px solid #ddd",
-                                padding: "12px 0"
-                            }}
-                        >
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    gap: 20,
-                                    alignItems: "start",
-                                    flexWrap: "wrap"
-                                }}
-                            >
+                            <div style={styles.itemGrid}>
                                 <div>
+                                    <label>Cantidad</label>
+                                    <br />
+                                    <input
+                                        type="number"
+                                        min="0.0001"
+                                        step="any"
+                                        value={item.quantity}
+                                        onChange={(event) =>
+                                            updateItem(
+                                                index,
+                                                "quantity",
+                                                event.target.value
+                                            )
+                                        }
+                                        style={{ width: 105 }}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label>Precio</label>
+                                    <br />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={item.price}
+                                        onChange={(event) =>
+                                            updateItem(
+                                                index,
+                                                "price",
+                                                event.target.value
+                                            )
+                                        }
+                                        style={{ width: 130 }}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label>Subtotal</label>
+                                    <br />
                                     <b>
-                                        {actionName} {movement.number}
-                                        {" — "}
-                                        {movement.reason_label}
+                                        {formatMoney(
+                                            Number(item.quantity || 0)
+                                            * Number(item.price || 0)
+                                        )}
                                     </b>
-
-                                    <div>
-                                        Fecha: {movement.date}
-                                    </div>
-
-                                    <div>
-                                        Costo contabilizado:{" "}
-                                        {moneyFormatter.format(
-                                            Number(
-                                                movement.total_cost || 0
-                                            )
-                                        )}
-                                    </div>
-
-                                    {movement.notes && (
-                                        <div>
-                                            Observación:{" "}
-                                            {movement.notes}
-                                        </div>
-                                    )}
-
-                                    <ul>
-                                        {(movement.items || []).map(
-                                            (item) => (
-                                                <li key={item.id}>
-                                                    {item.name}:{" "}
-                                                    {Number(
-                                                        item.quantity || 0
-                                                    )}{" "}
-                                                    unidad/es
-                                                </li>
-                                            )
-                                        )}
-                                    </ul>
                                 </div>
 
                                 <button
-                                    type="button"
-                                    onClick={() =>
-                                        deleteStockMovement(
-                                            movement
-                                        )
-                                    }
+                                    onClick={() => removeItem(index)}
+                                    style={styles.removeButton}
                                 >
-                                    🗑️ Eliminar
+                                    Quitar
                                 </button>
                             </div>
                         </div>
-                    );
-                })}
+                    ))}
+                </div>
+
+                <hr style={{ margin: "25px 0" }} />
+
+                <h3>Envases devueltos</h3>
+                <p style={styles.helpText}>
+                    Elegí la materia prima que representa ese envase. Al guardar,
+                    la cantidad volverá al stock.
+                </p>
+
+                <div style={styles.returnRow}>
+                    <select
+                        value={returnedMaterialId}
+                        onChange={(event) =>
+                            setReturnedMaterialId(event.target.value)
+                        }
+                        style={{ ...styles.input, width: 360 }}
+                    >
+                        <option value="">Seleccionar envase</option>
+                        {rawMaterials.map((material) => (
+                            <option key={material.id} value={material.id}>
+                                {material.name} ({material.unit || "unid."})
+                            </option>
+                        ))}
+                    </select>
+
+                    <input
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        value={returnedQuantity}
+                        onChange={(event) =>
+                            setReturnedQuantity(event.target.value)
+                        }
+                        style={{ width: 90, padding: 8 }}
+                    />
+
+                    <button onClick={addReturnedContainer}>
+                        ➕ Agregar devolución
+                    </button>
+                </div>
+
+                {returnedContainers.map((item, index) => (
+                    <div
+                        key={`${item.raw_material_id}-${index}`}
+                        style={styles.returnedItem}
+                    >
+                        <span>
+                            {item.name}: <b>{item.quantity}</b> {item.unit}
+                        </span>
+                        <button
+                            onClick={() => removeReturnedContainer(index)}
+                        >
+                            Quitar
+                        </button>
+                    </div>
+                ))}
+
+                <hr style={{ margin: "25px 0" }} />
+
+                <div style={styles.totalBox}>
+                    <div>
+                        Productos: <b>{formatMoney(productsSubtotal)}</b>
+                    </div>
+                    <div>
+                        Envío: <b>{formatMoney(shippingCost)}</b>
+                    </div>
+                    <h2 style={{ margin: "8px 0 0" }}>
+                        Total: {formatMoney(total)}
+                    </h2>
+                </div>
+
+                <button
+                    onClick={saveSale}
+                    disabled={saving}
+                    style={styles.saveButton}
+                >
+                    {saving
+                        ? "Guardando..."
+                        : editingSaleId
+                            ? "💾 Guardar cambios"
+                            : "💾 Guardar venta"}
+                </button>
             </div>
 
-            <SaleHistory />
+            <SaleHistory
+                version={historyVersion}
+                onEdit={startEditSale}
+                onChanged={historyChanged}
+            />
         </div>
     );
 }
+
+function formatMoney(value) {
+    return Number(value || 0).toLocaleString("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+const styles = {
+    card: {
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        padding: 20,
+        marginTop: 20,
+        background: "white"
+    },
+    formHeader: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 15,
+        flexWrap: "wrap"
+    },
+    formGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 18,
+        marginTop: 20
+    },
+    input: {
+        width: "100%",
+        maxWidth: 330,
+        padding: 8,
+        marginTop: 5,
+        boxSizing: "border-box"
+    },
+    helpText: {
+        color: "#666",
+        fontSize: 12,
+        marginTop: 5
+    },
+    itemCard: {
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        padding: 15,
+        marginBottom: 10
+    },
+    itemGrid: {
+        display: "flex",
+        gap: 20,
+        alignItems: "end",
+        flexWrap: "wrap",
+        marginTop: 12
+    },
+    removeButton: {
+        marginLeft: "auto"
+    },
+    returnRow: {
+        display: "flex",
+        gap: 10,
+        flexWrap: "wrap",
+        alignItems: "center"
+    },
+    returnedItem: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 15,
+        maxWidth: 560,
+        border: "1px solid #ddd",
+        borderRadius: 7,
+        padding: "8px 10px",
+        marginTop: 8
+    },
+    totalBox: {
+        maxWidth: 390,
+        border: "1px solid #bbb",
+        borderRadius: 8,
+        padding: 15,
+        background: "#fafafa"
+    },
+    saveButton: {
+        marginTop: 18,
+        padding: "9px 14px"
+    }
+};

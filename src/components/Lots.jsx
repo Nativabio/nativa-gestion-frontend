@@ -26,6 +26,7 @@ export default function Lots() {
     const [lotFilter, setLotFilter] = useState("");
     const [monthFilter, setMonthFilter] = useState("");
     const [productFilter, setProductFilter] = useState("");
+    const [showLegacyTestLots, setShowLegacyTestLots] = useState(false);
 
     const [editingLot, setEditingLot] = useState(null);
     const [editForm, setEditForm] = useState({
@@ -549,6 +550,11 @@ export default function Lots() {
         )
     );
 
+    const isLegacyTestLot = (lot) => {
+        const lotNumber = String(lot.lot_number || "").trim();
+        return /^\d{8,}$/.test(lotNumber);
+    };
+
     const filteredLots = lots.filter((lot) => {
         const matchesLot = String(lot.lot_number || "")
             .toLowerCase()
@@ -568,13 +574,27 @@ export default function Lots() {
             ||
             lotProductKey === productFilter;
 
-        return matchesLot && matchesMonth && matchesProduct;
+        const matchesLegacyVisibility =
+            showLegacyTestLots
+            ||
+            !isLegacyTestLot(lot);
+
+        return (
+            matchesLot
+            &&
+            matchesMonth
+            &&
+            matchesProduct
+            &&
+            matchesLegacyVisibility
+        );
     });
 
     function clearFilters() {
         setLotFilter("");
         setMonthFilter("");
         setProductFilter("");
+        setShowLegacyTestLots(false);
     }
 
     const tabButtonStyle = (active) => ({
@@ -895,6 +915,26 @@ export default function Lots() {
                                 ))}
                             </select>
                         </div>
+
+                        <label
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                paddingBottom: 6
+                            }}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={showLegacyTestLots}
+                                onChange={(event) =>
+                                    setShowLegacyTestLots(
+                                        event.target.checked
+                                    )
+                                }
+                            />
+                            Mostrar lotes de prueba anteriores
+                        </label>
 
                         <button onClick={clearFilters}>
                             Limpiar filtros

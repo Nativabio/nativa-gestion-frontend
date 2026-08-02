@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
-export default function SaleHistory({ onEdit, onChanged }) {
+export default function SaleHistory({
+    version = 0,
+    onEdit,
+    onChanged
+}) {
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
     useEffect(() => {
         loadSales();
-    }, []);
+    }, [version]);
 
     async function loadSales() {
         setLoading(true);
@@ -21,8 +25,7 @@ export default function SaleHistory({ onEdit, onChanged }) {
 
             if (!response.ok || data.error) {
                 throw new Error(
-                    data.error ||
-                    "No se pudo cargar el historial de ventas"
+                    data.error || "No se pudo cargar el historial de ventas"
                 );
             }
 
@@ -36,62 +39,57 @@ export default function SaleHistory({ onEdit, onChanged }) {
 
     async function deleteSale(id) {
         const confirmed = window.confirm(
-            "¿Seguro que querés eliminar esta venta?\n\n" +
-            "Se devolverán los productos a sus lotes y se eliminarán " +
-            "los asientos automáticos."
+            "¿Seguro que querés eliminar esta venta? Se revertirá el stock, los lotes, la contabilidad y los envases devueltos."
         );
 
-        if (!confirmed) return;
-
-        const response = await fetch(`${API}/sales/${id}`, {
-            method: "DELETE"
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.error) {
-            alert(data.error || "No se pudo eliminar la venta");
+        if (!confirmed) {
             return;
         }
 
-        alert(data.mensaje || "Venta eliminada");
-        await loadSales();
+        try {
+            const response = await fetch(`${API}/sales/${id}`, {
+                method: "DELETE"
+            });
+            const data = await response.json();
 
-        if (onChanged) {
-            await onChanged();
+            if (!response.ok || data.error) {
+                throw new Error(
+                    data.error || "No se pudo eliminar la venta"
+                );
+            }
+
+            alert(data.mensaje || "Venta eliminada");
+            await loadSales();
+
+            if (onChanged) {
+                await onChanged();
+            }
+        } catch (err) {
+            alert(`❌ ${err.message}`);
         }
-    }
-
-    function formatMoney(value) {
-        return Number(value || 0).toLocaleString("es-AR", {
-            style: "currency",
-            currency: "ARS",
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        });
-    }
-
-    function formatNumber(value) {
-        return Number(value || 0).toLocaleString("es-AR", {
-            maximumFractionDigits: 3
-        });
-    }
-
-    function formatDate(value) {
-        const normalized = String(value || "").substring(0, 10);
-
-        if (!normalized) return "";
-
-        const parts = normalized.split("-");
-        if (parts.length !== 3) return normalized;
-
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
 
     function saleDetail(sale) {
         const items = sale.items || [];
 
-        if (items.length === 0) return "Sin detalle";
+        if (items.length === 0) {
+            return "Sin detalle";
+        }
+
+        return items
+            .map(
+                (item) =>
+                    `${item.name} × ${formatNumber(item.quantity)}`
+            )
+            .join(" · ");
+    }
+
+    function returnedDetail(sale) {
+        const items = sale.returned_containers || [];
+
+        if (items.length === 0) {
+            return "—";
+        }
 
         return items
             .map(
@@ -107,8 +105,7 @@ export default function SaleHistory({ onEdit, onChanged }) {
                 <div>
                     <h2 style={styles.title}>📋 Historial de Ventas</h2>
                     <p style={styles.subtitle}>
-                        Podés corregir una venta sin duplicar el stock ni los
-                        asientos contables.
+                        Ventas registradas, ordenadas desde la más reciente.
                     </p>
                 </div>
 
@@ -135,7 +132,10 @@ export default function SaleHistory({ onEdit, onChanged }) {
                                 <th style={styles.th}>Cliente</th>
                                 <th style={styles.th}>Detalle</th>
                                 <th style={styles.th}>Pago</th>
+                                <th style={styles.thRight}>Productos</th>
+                                <th style={styles.thRight}>Envío</th>
                                 <th style={styles.thRight}>Total</th>
+                                <th style={styles.th}>Envases devueltos</th>
                                 <th style={styles.thCenter}>Acciones</th>
                             </tr>
                         </thead>
@@ -143,6 +143,10 @@ export default function SaleHistory({ onEdit, onChanged }) {
                         <tbody>
                             {sales.map((sale) => {
                                 const detail = saleDetail(sale);
+                                const returns = returnedDetail(sale);
+                                const shipping = Number(sale.shipping_cost || 0);
+                                const productTotal =
+                                    Number(sale.total || 0) - shipping;
 
                                 return (
                                     <tr key={sale.id}>
@@ -163,9 +167,25 @@ export default function SaleHistory({ onEdit, onChanged }) {
                                         </td>
                                         <td style={styles.td}>
                                             {sale.payment_method || "Caja"}
+                                            {sale.payment_status
+                                                && sale.payment_status !== "PAGADA"
+                                                ? ` · ${sale.payment_status}`
+                                                : ""}
+                                        </td>
+                                        <td style={styles.tdRight}>
+                                            {formatMoney(productTotal)}
+                                        </td>
+                                        <td style={styles.tdRight}>
+                                            {formatMoney(shipping)}
                                         </td>
                                         <td style={styles.tdRight}>
                                             {formatMoney(sale.total)}
+                                        </td>
+                                        <td
+                                            style={styles.returnCell}
+                                            title={returns}
+                                        >
+                                            {returns}
                                         </td>
                                         <td style={styles.tdCenter}>
                                             <button
@@ -177,9 +197,7 @@ export default function SaleHistory({ onEdit, onChanged }) {
                                             </button>
 
                                             <button
-                                                onClick={() =>
-                                                    deleteSale(sale.id)
-                                                }
+                                                onClick={() => deleteSale(sale.id)}
                                                 style={styles.deleteButton}
                                                 title="Eliminar venta"
                                             >
@@ -195,6 +213,37 @@ export default function SaleHistory({ onEdit, onChanged }) {
             )}
         </div>
     );
+}
+
+function formatMoney(value) {
+    return Number(value || 0).toLocaleString("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString("es-AR", {
+        maximumFractionDigits: 3
+    });
+}
+
+function formatDate(value) {
+    const normalized = String(value || "").substring(0, 10);
+
+    if (!normalized) {
+        return "";
+    }
+
+    const parts = normalized.split("-");
+
+    if (parts.length !== 3) {
+        return normalized;
+    }
+
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 const styles = {
@@ -226,7 +275,7 @@ const styles = {
     },
     table: {
         width: "100%",
-        minWidth: 1000,
+        minWidth: 1390,
         borderCollapse: "collapse"
     },
     th: {
@@ -273,8 +322,17 @@ const styles = {
         borderBottom: "1px solid #eee",
         fontSize: 14,
         verticalAlign: "middle",
-        minWidth: 270,
-        maxWidth: 430,
+        minWidth: 260,
+        maxWidth: 400,
+        lineHeight: 1.35
+    },
+    returnCell: {
+        padding: "10px 12px",
+        borderBottom: "1px solid #eee",
+        fontSize: 14,
+        verticalAlign: "middle",
+        minWidth: 190,
+        maxWidth: 320,
         lineHeight: 1.35
     },
     tdRight: {
@@ -294,10 +352,9 @@ const styles = {
         whiteSpace: "nowrap"
     },
     editButton: {
+        marginRight: 6,
         padding: "6px 10px",
-        marginRight: 7,
-        cursor: "pointer",
-        whiteSpace: "nowrap"
+        cursor: "pointer"
     },
     deleteButton: {
         background: "#d9534f",

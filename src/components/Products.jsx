@@ -13,9 +13,13 @@ export default function Products() {
     }, []);
 
     async function loadProducts() {
-        const response = await fetch(`${API}/products`);
-        const data = await response.json();
-        setProducts(Array.isArray(data) ? data : []);
+        try {
+            const response = await fetch(`${API}/products`);
+            const data = await response.json();
+            setProducts(Array.isArray(data) ? data : []);
+        } catch {
+            setProducts([]);
+        }
     }
 
     async function createProduct() {
@@ -49,14 +53,14 @@ export default function Products() {
         await loadProducts();
     }
 
-    async function updatePrice(id, updatedPrice) {
+    async function updatePrice(id, productPrice) {
         const response = await fetch(`${API}/products/${id}`, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                price: Number(updatedPrice)
+                price: Number(productPrice || 0)
             })
         });
 
@@ -68,15 +72,17 @@ export default function Products() {
         }
 
         alert("Precio guardado");
+        await loadProducts();
     }
 
-    async function deleteProduct(id) {
-        if (!window.confirm("¿Eliminar este producto?")) return;
+    async function deleteProduct(product) {
+        if (!window.confirm(`¿Eliminar ${product.name}?`)) {
+            return;
+        }
 
-        const response = await fetch(`${API}/products/${id}`, {
+        const response = await fetch(`${API}/products/${product.id}`, {
             method: "DELETE"
         });
-
         const data = await response.json();
 
         if (!response.ok || data.error) {
@@ -87,16 +93,20 @@ export default function Products() {
         await loadProducts();
     }
 
-    const totalUnits = useMemo(
-        () =>
-            products.reduce(
-                (sum, product) => sum + Number(product.stock || 0),
-                0
-            ),
-        [products]
-    );
+    function changePrice(productId, value) {
+        setProducts((current) =>
+            current.map((product) =>
+                product.id === productId
+                    ? {
+                        ...product,
+                        price: Number(value)
+                    }
+                    : product
+            )
+        );
+    }
 
-    const totalInventoryValue = useMemo(
+    const totalInventoryCost = useMemo(
         () =>
             products.reduce(
                 (sum, product) =>
@@ -106,33 +116,30 @@ export default function Products() {
         [products]
     );
 
-    function formatMoney(value) {
-        return Number(value || 0).toLocaleString("es-AR", {
-            style: "currency",
-            currency: "ARS",
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        });
-    }
-
-    function formatNumber(value) {
-        return Number(value || 0).toLocaleString("es-AR", {
-            maximumFractionDigits: 3
-        });
-    }
+    const totalSaleValue = useMemo(
+        () =>
+            products.reduce(
+                (sum, product) =>
+                    sum
+                    + Number(product.stock || 0)
+                    * Number(product.price || 0),
+                0
+            ),
+        [products]
+    );
 
     return (
         <div>
             <h2>📦 Productos Terminados</h2>
 
-            <div style={styles.newProductBox}>
+            <div style={styles.newProductCard}>
                 <h3>➕ Nuevo Producto</h3>
 
                 <input
                     placeholder="Nombre producto"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    style={styles.input}
+                    style={styles.newInput}
                 />
 
                 <input
@@ -140,7 +147,7 @@ export default function Products() {
                     placeholder="Precio"
                     value={price}
                     onChange={(event) => setPrice(event.target.value)}
-                    style={styles.input}
+                    style={styles.newInput}
                 />
 
                 <input
@@ -148,136 +155,237 @@ export default function Products() {
                     placeholder="Stock inicial"
                     value={stock}
                     onChange={(event) => setStock(event.target.value)}
-                    style={styles.input}
+                    style={styles.newInput}
                 />
 
                 <button onClick={createProduct}>💾 Crear</button>
             </div>
 
-            <br />
+            <div style={styles.summaryGrid}>
+                <div style={styles.summaryCard}>
+                    <span>Valor total al costo</span>
+                    <strong>{formatMoney(totalInventoryCost)}</strong>
+                </div>
+
+                <div style={styles.summaryCard}>
+                    <span>Valor total a precio de venta</span>
+                    <strong>{formatMoney(totalSaleValue)}</strong>
+                </div>
+            </div>
 
             <div style={{ overflowX: "auto" }}>
                 <table style={styles.table}>
                     <thead>
                         <tr>
-                            <th style={styles.cell}>Producto</th>
-                            <th style={styles.cellRight}>Stock</th>
-                            <th style={styles.cellRight}>
-                                Valor de inventario
+                            <th style={styles.th}>Producto</th>
+                            <th style={styles.thRight}>Stock</th>
+                            <th style={styles.thRight}>Valor al costo</th>
+                            <th style={styles.th}>Precio de venta</th>
+                            <th style={styles.thRight}>
+                                Valor total de venta
                             </th>
-                            <th style={styles.cell}>Precio Venta</th>
-                            <th style={styles.cell}>Acción</th>
+                            <th style={styles.thCenter}>Acción</th>
                         </tr>
                     </thead>
 
                     <tbody>
-                        {products.map((product) => (
-                            <tr key={product.id}>
-                                <td style={styles.cell}>{product.name}</td>
-                                <td style={styles.cellRight}>
-                                    {formatNumber(product.stock)}
-                                </td>
-                                <td style={styles.cellRight}>
-                                    {formatMoney(product.inventory_value)}
-                                </td>
-                                <td style={styles.cell}>
-                                    <input
-                                        type="number"
-                                        value={product.price}
-                                        onChange={(event) => {
-                                            setProducts((current) =>
-                                                current.map((item) =>
-                                                    item.id === product.id
-                                                        ? {
-                                                            ...item,
-                                                            price: Number(
-                                                                event.target.value
-                                                            )
-                                                        }
-                                                        : item
+                        {products.map((product) => {
+                            const saleValue =
+                                Number(product.stock || 0)
+                                * Number(product.price || 0);
+
+                            return (
+                                <tr key={product.id}>
+                                    <td style={styles.tdStrong}>
+                                        {product.name}
+                                    </td>
+                                    <td style={styles.tdRight}>
+                                        {formatNumber(product.stock)}
+                                    </td>
+                                    <td style={styles.tdRight}>
+                                        {formatMoney(product.inventory_value)}
+                                    </td>
+                                    <td style={styles.td}>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={product.price}
+                                            onChange={(event) =>
+                                                changePrice(
+                                                    product.id,
+                                                    event.target.value
                                                 )
-                                            );
-                                        }}
-                                    />
-                                </td>
-                                <td style={styles.cell}>
-                                    <button
-                                        onClick={() =>
-                                            updatePrice(
-                                                product.id,
-                                                product.price
-                                            )
-                                        }
-                                    >
-                                        💾 Guardar
-                                    </button>
-                                    <button
-                                        style={{ marginLeft: 10 }}
-                                        onClick={() =>
-                                            deleteProduct(product.id)
-                                        }
-                                    >
-                                        🗑️ Eliminar
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                                            }
+                                            style={{ width: 135 }}
+                                        />
+                                        <div style={styles.priceTotalHint}>
+                                            Total: {formatMoney(saleValue)}
+                                        </div>
+                                    </td>
+                                    <td style={styles.tdRightStrong}>
+                                        {formatMoney(saleValue)}
+                                    </td>
+                                    <td style={styles.tdCenter}>
+                                        <button
+                                            onClick={() =>
+                                                updatePrice(
+                                                    product.id,
+                                                    product.price
+                                                )
+                                            }
+                                        >
+                                            💾 Guardar
+                                        </button>
+
+                                        <button
+                                            onClick={() =>
+                                                deleteProduct(product)
+                                            }
+                                            style={{ marginLeft: 8 }}
+                                        >
+                                            🗑️ Eliminar
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
 
                     <tfoot>
-                        <tr style={styles.totalRow}>
-                            <td style={styles.cell}>
-                                <strong>TOTAL</strong>
+                        <tr style={styles.footerRow}>
+                            <td colSpan="2" style={styles.footerLabel}>
+                                Totales del stock
                             </td>
-                            <td style={styles.cellRight}>
-                                <strong>{formatNumber(totalUnits)}</strong>
+                            <td style={styles.tdRightStrong}>
+                                {formatMoney(totalInventoryCost)}
                             </td>
-                            <td style={styles.cellRight}>
-                                <strong>
-                                    {formatMoney(totalInventoryValue)}
-                                </strong>
+                            <td></td>
+                            <td style={styles.tdRightStrong}>
+                                {formatMoney(totalSaleValue)}
                             </td>
-                            <td style={styles.cell} colSpan={2}>
-                                <small>
-                                    El valor se calcula con el costo de los
-                                    lotes disponibles.
-                                </small>
-                            </td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
+
+            <p style={styles.note}>
+                El valor al costo se toma de los lotes que respaldan el stock.
+                El valor de venta se calcula con el precio vigente de cada producto.
+            </p>
         </div>
     );
 }
 
+function formatMoney(value) {
+    return Number(value || 0).toLocaleString("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString("es-AR", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    });
+}
+
 const styles = {
-    newProductBox: {
+    newProductCard: {
         background: "#f5f5f5",
         padding: 20,
         borderRadius: 10
     },
-    input: {
+    newInput: {
         marginRight: 10,
+        marginBottom: 8,
         padding: 8
+    },
+    summaryGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 15,
+        margin: "22px 0"
+    },
+    summaryCard: {
+        border: "1px solid #ddd",
+        borderRadius: 9,
+        padding: 16,
+        background: "white",
+        display: "flex",
+        flexDirection: "column",
+        gap: 7
     },
     table: {
         width: "100%",
-        minWidth: 850,
+        minWidth: 980,
         borderCollapse: "collapse"
     },
-    cell: {
-        padding: 9,
-        borderBottom: "1px solid #ddd",
-        textAlign: "left"
+    th: {
+        textAlign: "left",
+        padding: 10,
+        borderBottom: "2px solid #bbb",
+        background: "#f6f6f6"
     },
-    cellRight: {
-        padding: 9,
+    thRight: {
+        textAlign: "right",
+        padding: 10,
+        borderBottom: "2px solid #bbb",
+        background: "#f6f6f6"
+    },
+    thCenter: {
+        textAlign: "center",
+        padding: 10,
+        borderBottom: "2px solid #bbb",
+        background: "#f6f6f6"
+    },
+    td: {
+        padding: 10,
+        borderBottom: "1px solid #ddd"
+    },
+    tdStrong: {
+        padding: 10,
+        borderBottom: "1px solid #ddd",
+        fontWeight: "bold"
+    },
+    tdRight: {
+        padding: 10,
         borderBottom: "1px solid #ddd",
         textAlign: "right"
     },
-    totalRow: {
-        background: "#f5f5f5",
-        borderTop: "2px solid #999"
+    tdRightStrong: {
+        padding: 10,
+        borderBottom: "1px solid #ddd",
+        textAlign: "right",
+        fontWeight: "bold"
+    },
+    tdCenter: {
+        padding: 10,
+        borderBottom: "1px solid #ddd",
+        textAlign: "center",
+        whiteSpace: "nowrap"
+    },
+    priceTotalHint: {
+        marginTop: 5,
+        fontSize: 12,
+        color: "#666"
+    },
+    footerRow: {
+        borderTop: "2px solid #777",
+        background: "#fafafa"
+    },
+    footerLabel: {
+        padding: 10,
+        textAlign: "right",
+        fontWeight: "bold"
+    },
+    note: {
+        color: "#666",
+        fontSize: 13,
+        marginTop: 12
     }
 };
