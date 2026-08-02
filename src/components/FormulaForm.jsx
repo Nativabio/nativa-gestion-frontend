@@ -1,70 +1,131 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
 const emptyForm = {
     name: "",
-    category: "",
-    unit: "g",
-    stock: 0,
-    minimum_stock: 0,
-    cost: 0,
-    supplier: "",
-    location: "",
-    is_intermediate: 0
+    output_type: "PRODUCT",
+    output_product_id: "",
+    output_raw_material_id: "",
+    batch_size: 1,
+    units_produced: 1,
+    labor_hours: 0,
+    margin_percent: 40,
+    notes: ""
 };
 
-export default function RawMaterialForm({
-    onSaved,
-    editItem
-}) {
+export default function FormulaForm({ onSaved, editing }) {
     const [form, setForm] = useState(emptyForm);
+    const [products, setProducts] = useState([]);
+    const [rawMaterials, setRawMaterials] = useState([]);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        if (editItem) {
-            setForm({
-                name: editItem.name || "",
-                category: editItem.category || "",
-                unit: editItem.unit || "g",
-                stock: Number(editItem.stock || 0),
-                minimum_stock:
-                    Number(editItem.minimum_stock || 0),
-                cost: Number(editItem.cost || 0),
-                supplier: editItem.supplier || "",
-                location: editItem.location || "",
-                is_intermediate:
-                    Number(editItem.is_intermediate || 0)
-            });
-        } else {
+        loadOutputs();
+    }, []);
+
+    useEffect(() => {
+        if (!editing) {
             setForm(emptyForm);
+            return;
         }
-    }, [editItem]);
+
+        const outputType = String(
+            editing.output_type
+            || (editing.output_raw_material_id ? "RAW_MATERIAL" : "PRODUCT")
+        ).toUpperCase();
+
+        setForm({
+            name: editing.name || "",
+            output_type: outputType,
+            output_product_id:
+                outputType === "PRODUCT"
+                    ? String(editing.output_product_id || "")
+                    : "",
+            output_raw_material_id:
+                outputType === "RAW_MATERIAL"
+                    ? String(editing.output_raw_material_id || "")
+                    : "",
+            batch_size: Number(editing.batch_size || 1),
+            units_produced: Number(editing.units_produced || 1),
+            labor_hours: Number(editing.labor_hours || 0),
+            margin_percent: Number(editing.margin_percent ?? 40),
+            notes: editing.notes || ""
+        });
+    }, [editing]);
+
+    async function loadOutputs() {
+        try {
+            const [productsResponse, materialsResponse] = await Promise.all([
+                fetch(`${API}/products`),
+                fetch(`${API}/raw-materials`)
+            ]);
+
+            const [productsData, materialsData] = await Promise.all([
+                productsResponse.json(),
+                materialsResponse.json()
+            ]);
+
+            setProducts(
+                (Array.isArray(productsData) ? productsData : [])
+                    .slice()
+                    .sort((a, b) =>
+                        String(a.name || "").localeCompare(
+                            String(b.name || ""),
+                            "es",
+                            { sensitivity: "base" }
+                        )
+                    )
+            );
+
+            setRawMaterials(
+                (Array.isArray(materialsData) ? materialsData : [])
+                    .slice()
+                    .sort((a, b) =>
+                        String(a.name || "").localeCompare(
+                            String(b.name || ""),
+                            "es",
+                            { sensitivity: "base" }
+                        )
+                    )
+            );
+        } catch {
+            setProducts([]);
+            setRawMaterials([]);
+        }
+    }
+
+    const intermediateMaterials = useMemo(
+        () =>
+            rawMaterials.filter(
+                (material) => Number(material.is_intermediate || 0) === 1
+            ),
+        [rawMaterials]
+    );
+
+    const selectedIntermediate = rawMaterials.find(
+        (material) =>
+            Number(material.id)
+            === Number(form.output_raw_material_id)
+    );
+
+    const isRawMaterial = form.output_type === "RAW_MATERIAL";
 
     function change(event) {
-        const {
-            name,
-            value,
-            type,
-            checked
-        } = event.target;
+        const { name, value } = event.target;
 
-        if (
-            name === "is_intermediate"
-            &&
-            type === "checkbox"
-        ) {
+        if (name === "output_type") {
             setForm((current) => ({
                 ...current,
-                is_intermediate: checked ? 1 : 0,
-                stock:
-                    checked && !editItem
-                        ? 0
-                        : current.stock,
-                cost:
-                    checked && !editItem
-                        ? 0
-                        : current.cost
+                output_type: value,
+                output_product_id:
+                    value === "PRODUCT"
+                        ? current.output_product_id
+                        : "",
+                output_raw_material_id:
+                    value === "RAW_MATERIAL"
+                        ? current.output_raw_material_id
+                        : ""
             }));
             return;
         }
@@ -77,24 +138,56 @@ export default function RawMaterialForm({
 
     async function save() {
         if (!form.name.trim()) {
-            alert("Ingresá el nombre de la materia prima");
+            alert("Ingresá el nombre de la fórmula");
             return;
         }
 
-        if (!form.unit.trim()) {
-            alert("Ingresá la unidad");
+        if (
+            form.output_type === "PRODUCT"
+            && !form.output_product_id
+        ) {
+            alert("Seleccioná el producto terminado que produce la fórmula");
+            return;
+        }
+
+        if (
+            form.output_type === "RAW_MATERIAL"
+            && !form.output_raw_material_id
+        ) {
+            alert("Seleccioná la materia prima elaborada que produce la fórmula");
+            return;
+        }
+
+        if (Number(form.batch_size) <= 0) {
+            alert("El tamaño del lote base debe ser mayor a cero");
+            return;
+        }
+
+        if (Number(form.units_produced) <= 0) {
+            alert("El rendimiento previsto debe ser mayor a cero");
+            return;
+        }
+
+        if (Number(form.labor_hours || 0) < 0) {
+            alert("Las horas de trabajo no pueden ser negativas");
+            return;
+        }
+
+        if (
+            Number(form.margin_percent || 0) < 0
+            || Number(form.margin_percent || 0) >= 100
+        ) {
+            alert("El margen debe ser mayor o igual a 0 y menor a 100");
             return;
         }
 
         setSaving(true);
 
         try {
-            const method =
-                editItem ? "PUT" : "POST";
-
-            const url = editItem
-                ? `${API}/raw-materials/${editItem.id}`
-                : `${API}/raw-materials`;
+            const method = editing ? "PUT" : "POST";
+            const url = editing
+                ? `${API}/formulas/${editing.id}`
+                : `${API}/formulas`;
 
             const response = await fetch(url, {
                 method,
@@ -102,18 +195,24 @@ export default function RawMaterialForm({
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    code: editItem?.code || "",
                     name: form.name.trim(),
-                    category: form.category.trim(),
-                    unit: form.unit.trim(),
-                    stock: Number(form.stock || 0),
-                    minimum_stock:
-                        Number(form.minimum_stock || 0),
-                    cost: Number(form.cost || 0),
-                    supplier: form.supplier.trim(),
-                    location: form.location.trim(),
-                    is_intermediate:
-                        Number(form.is_intermediate || 0)
+                    output_type: form.output_type,
+                    output_product_id:
+                        form.output_type === "PRODUCT"
+                            ? Number(form.output_product_id)
+                            : null,
+                    output_raw_material_id:
+                        form.output_type === "RAW_MATERIAL"
+                            ? Number(form.output_raw_material_id)
+                            : null,
+                    batch_size: Number(form.batch_size),
+                    units_produced: Number(form.units_produced),
+                    labor_hours: Number(form.labor_hours || 0),
+                    margin_percent:
+                        form.output_type === "PRODUCT"
+                            ? Number(form.margin_percent || 0)
+                            : 0,
+                    notes: form.notes.trim()
                 })
             });
 
@@ -122,13 +221,13 @@ export default function RawMaterialForm({
             if (!response.ok || data.error) {
                 alert(
                     data.error
-                    ||
-                    "No se pudo guardar la materia prima"
+                    || "No se pudo guardar la fórmula"
                 );
                 return;
             }
 
             setForm(emptyForm);
+            await loadOutputs();
             onSaved?.();
         } catch {
             alert("No se pudo conectar con el backend");
@@ -137,74 +236,89 @@ export default function RawMaterialForm({
         }
     }
 
-    const isIntermediate =
-        Number(form.is_intermediate || 0) === 1;
-
     return (
         <div style={styles.card}>
             <h3>
-                {editItem
-                    ? "✏️ Editar Materia Prima"
-                    : "🌿 Nueva Materia Prima"}
+                {editing ? "✏️ Editar Fórmula" : "🧪 Nueva Fórmula"}
             </h3>
 
             <div style={styles.grid}>
                 <div>
-                    <label>Nombre</label>
+                    <label>Nombre de la fórmula</label>
                     <input
                         name="name"
                         value={form.name}
                         onChange={change}
+                        placeholder="Ej.: Oleato de lavanda"
                         style={styles.input}
                     />
                 </div>
 
                 <div>
-                    <label>Categoría</label>
-                    <input
-                        name="category"
-                        value={form.category}
-                        onChange={change}
-                        style={styles.input}
-                    />
-                </div>
-
-                <div>
-                    <label>Unidad</label>
+                    <label>Resultado de la elaboración</label>
                     <select
-                        name="unit"
-                        value={form.unit}
+                        name="output_type"
+                        value={form.output_type}
                         onChange={change}
                         style={styles.input}
                     >
-                        <option value="g">g</option>
-                        <option value="ml">ml</option>
-                        <option value="unidad">unidad</option>
-                        <option value="kg">kg</option>
-                        <option value="l">l</option>
+                        <option value="PRODUCT">Producto terminado</option>
+                        <option value="RAW_MATERIAL">
+                            Materia prima elaborada
+                        </option>
                     </select>
                 </div>
 
-                <div>
-                    <label>Stock</label>
-                    <input
-                        name="stock"
-                        type="number"
-                        step="0.01"
-                        value={form.stock}
-                        onChange={change}
-                        disabled={isIntermediate}
-                        style={styles.input}
-                    />
-                </div>
+                {form.output_type === "PRODUCT" ? (
+                    <div>
+                        <label>Producto obtenido</label>
+                        <select
+                            name="output_product_id"
+                            value={form.output_product_id}
+                            onChange={change}
+                            style={styles.input}
+                        >
+                            <option value="">Seleccionar...</option>
+                            {products.map((product) => (
+                                <option key={product.id} value={product.id}>
+                                    {product.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                ) : (
+                    <div>
+                        <label>Materia prima obtenida</label>
+                        <select
+                            name="output_raw_material_id"
+                            value={form.output_raw_material_id}
+                            onChange={change}
+                            style={styles.input}
+                        >
+                            <option value="">Seleccionar...</option>
+                            {intermediateMaterials.map((material) => (
+                                <option key={material.id} value={material.id}>
+                                    {material.name}
+                                </option>
+                            ))}
+                        </select>
+                        {intermediateMaterials.length === 0 && (
+                            <div style={styles.help}>
+                                Primero creá la materia prima y marcala como
+                                “materia prima elaborada”.
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div>
-                    <label>Stock mínimo</label>
+                    <label>Tamaño del lote base</label>
                     <input
-                        name="minimum_stock"
+                        name="batch_size"
                         type="number"
+                        min="0.0001"
                         step="0.01"
-                        value={form.minimum_stock}
+                        value={form.batch_size}
                         onChange={change}
                         style={styles.input}
                     />
@@ -212,68 +326,74 @@ export default function RawMaterialForm({
 
                 <div>
                     <label>
-                        Costo por {form.unit || "unidad"}
+                        {isRawMaterial
+                            ? `Rendimiento estimado${
+                                selectedIntermediate?.unit
+                                    ? ` (${selectedIntermediate.unit})`
+                                    : ""
+                            }`
+                            : "Unidades previstas"}
                     </label>
                     <input
-                        name="cost"
+                        name="units_produced"
+                        type="number"
+                        min="0.0001"
+                        step="0.01"
+                        value={form.units_produced}
+                        onChange={change}
+                        style={styles.input}
+                    />
+                </div>
+
+                <div>
+                    <label>Horas de trabajo estimadas</label>
+                    <input
+                        name="labor_hours"
                         type="number"
                         min="0"
-                        step="0.0001"
-                        value={form.cost}
-                        onChange={change}
-                        disabled={isIntermediate}
-                        style={styles.input}
-                    />
-                </div>
-
-                <div>
-                    <label>Proveedor</label>
-                    <input
-                        name="supplier"
-                        value={form.supplier}
+                        step="0.01"
+                        value={form.labor_hours}
                         onChange={change}
                         style={styles.input}
                     />
                 </div>
 
-                <div>
-                    <label>Ubicación</label>
-                    <input
-                        name="location"
-                        value={form.location}
-                        onChange={change}
-                        style={styles.input}
-                    />
-                </div>
+                {!isRawMaterial && (
+                    <div>
+                        <label>Margen de rentabilidad (%)</label>
+                        <input
+                            name="margin_percent"
+                            type="number"
+                            min="0"
+                            max="99.99"
+                            step="0.01"
+                            value={form.margin_percent}
+                            onChange={change}
+                            style={styles.input}
+                        />
+                    </div>
+                )}
             </div>
 
-            <label style={styles.checkbox}>
-                <input
-                    name="is_intermediate"
-                    type="checkbox"
-                    checked={isIntermediate}
+            <div style={{ marginTop: 14 }}>
+                <label>Notas</label>
+                <textarea
+                    name="notes"
+                    value={form.notes}
                     onChange={change}
-                    disabled={
-                        Boolean(editItem)
-                        &&
-                        Number(editItem.is_intermediate || 0)
-                            === 1
-                    }
+                    rows="3"
+                    style={styles.textarea}
                 />
-                Es una materia prima elaborada
-                (por ejemplo, un oleato)
-            </label>
+            </div>
 
-            {isIntermediate && (
-                <div style={styles.help}>
-                    El stock y el costo se generan al fabricar su lote.
-                    No hace falta cargarlos manualmente.
+            {isRawMaterial && (
+                <div style={styles.info}>
+                    Después de guardar la fórmula, agregá sus ingredientes.
+                    Para el oleato, por ejemplo: 200 g de aceite de almendras
+                    y 50 g de flores de lavanda. La cantidad real obtenida se
+                    carga al fabricar el lote.
                 </div>
             )}
-
-            <div style={styles.help}>
-                El código se genera internamente y no se muestra.
-            </div>
 
             <button
                 onClick={save}
@@ -282,9 +402,9 @@ export default function RawMaterialForm({
             >
                 {saving
                     ? "Guardando..."
-                    : editItem
+                    : editing
                         ? "💾 Guardar cambios"
-                        : "💾 Guardar Materia Prima"}
+                        : "💾 Guardar Fórmula"}
             </button>
         </div>
     );
@@ -300,7 +420,7 @@ const styles = {
     grid: {
         display: "grid",
         gridTemplateColumns:
-            "repeat(auto-fit, minmax(210px, 1fr))",
+            "repeat(auto-fit, minmax(220px, 1fr))",
         gap: 14
     },
     input: {
@@ -310,16 +430,27 @@ const styles = {
         padding: 8,
         marginTop: 5
     },
-    checkbox: {
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
-        marginTop: 18,
-        fontWeight: "bold"
+    textarea: {
+        display: "block",
+        width: "100%",
+        boxSizing: "border-box",
+        padding: 8,
+        marginTop: 5,
+        resize: "vertical"
     },
     help: {
         marginTop: 6,
         fontSize: 12,
-        color: "#666"
+        color: "#8a5a00"
+    },
+    info: {
+        marginTop: 14,
+        padding: 12,
+        borderRadius: 8,
+        background: "#f3f7ed",
+        border: "1px solid #ccd8bf",
+        color: "#4b5c3c",
+        fontSize: 13,
+        lineHeight: 1.45
     }
 };
