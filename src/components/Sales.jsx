@@ -5,6 +5,13 @@ const API = "http://127.0.0.1:8000";
 
 const initialDate = () => new Date().toISOString().substring(0, 10);
 
+const STOCK_MOVEMENT_REASONS = [
+    { value: "STOCK_CONTROL", label: "Control de stock" },
+    { value: "LOT_TEST", label: "Testeo de lote" },
+    { value: "PERSONAL_USE", label: "Consumo personal" },
+    { value: "GIFT", label: "Regalo u obsequio" }
+];
+
 export default function Sales() {
     const [client, setClient] = useState("");
     const [date, setDate] = useState(initialDate());
@@ -26,6 +33,18 @@ export default function Sales() {
     const [editingSaleNumber, setEditingSaleNumber] = useState("");
     const [saving, setSaving] = useState(false);
 
+    // ==========================
+    // CONTROL DE PRODUCTOS
+    // ==========================
+    const [movementType, setMovementType] = useState("OUT");
+    const [movementDate, setMovementDate] = useState(initialDate());
+    const [movementReason, setMovementReason] = useState("STOCK_CONTROL");
+    const [movementNotes, setMovementNotes] = useState("");
+    const [movementSelectedProduct, setMovementSelectedProduct] = useState("");
+    const [movementItems, setMovementItems] = useState([]);
+    const [stockMovements, setStockMovements] = useState([]);
+    const [savingMovement, setSavingMovement] = useState(false);
+
     useEffect(() => {
         loadAll();
     }, []);
@@ -34,7 +53,8 @@ export default function Sales() {
         await Promise.all([
             loadProducts(),
             loadRawMaterials(),
-            loadSalesForClients()
+            loadSalesForClients(),
+            loadStockMovements()
         ]);
     }
 
@@ -77,6 +97,36 @@ export default function Sales() {
             setSales([]);
         }
     }
+
+    async function loadStockMovements() {
+        try {
+            const response = await fetch(`${API}/stock-movements`);
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(
+                    data.error || "No se pudieron cargar los ajustes de stock"
+                );
+            }
+
+            setStockMovements(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error(error);
+            setStockMovements([]);
+        }
+    }
+
+    const sortedProducts = useMemo(
+        () =>
+            [...products].sort((a, b) =>
+                String(a.name || "").localeCompare(
+                    String(b.name || ""),
+                    "es",
+                    { sensitivity: "base" }
+                )
+            ),
+        [products]
+    );
 
     const clientOptions = useMemo(() => {
         const names = new Map();
@@ -398,10 +448,223 @@ export default function Sales() {
         setReturnedContainers([]);
     }
 
+    function changeMovementType(value) {
+        setMovementType(value);
+        setMovementItems([]);
+
+        if (value === "IN") {
+            setMovementReason("STOCK_CONTROL");
+        }
+    }
+
+    function addMovementProduct() {
+        if (!movementSelectedProduct) {
+            return;
+        }
+
+        const product = products.find(
+            (item) => Number(item.id) === Number(movementSelectedProduct)
+        );
+
+        if (!product) {
+            return;
+        }
+
+        setMovementItems((current) => {
+            const existing = current.find(
+                (item) => Number(item.id) === Number(product.id)
+            );
+
+            if (existing) {
+                return current.map((item) =>
+                    Number(item.id) === Number(product.id)
+                        ? {
+                            ...item,
+                            quantity: Number(item.quantity || 0) + 1
+                        }
+                        : item
+                );
+            }
+
+            return [
+                ...current,
+                {
+                    ...product,
+                    quantity: 1
+                }
+            ];
+        });
+
+        setMovementSelectedProduct("");
+    }
+
+    function updateMovementQuantity(index, value) {
+        setMovementItems((current) =>
+            current.map((item, itemIndex) =>
+                itemIndex === index
+                    ? {
+                        ...item,
+                        quantity: Number(value)
+                    }
+                    : item
+            )
+        );
+    }
+
+    function removeMovementItem(index) {
+        setMovementItems((current) =>
+            current.filter((_, itemIndex) => itemIndex !== index)
+        );
+    }
+
+    async function saveStockMovement() {
+        if (movementItems.length === 0) {
+            alert("Agregá al menos un producto");
+            return;
+        }
+
+        if (
+            movementItems.some(
+                (item) => Number(item.quantity || 0) <= 0
+            )
+        ) {
+            alert("Las cantidades deben ser mayores a cero");
+            return;
+        }
+
+        const actionName =
+            movementType === "IN" ? "alta" : "baja";
+
+        const confirmed = window.confirm(
+            `¿Guardar esta ${actionName} de stock?`
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        setSavingMovement(true);
+
+        try {
+            const response = await fetch(`${API}/stock-movements`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    movement_type: movementType,
+                    date: movementDate,
+                    reason:
+                        movementType === "IN"
+                            ? "STOCK_CONTROL"
+                            : movementReason,
+                    notes: movementNotes,
+                    items: movementItems.map((item) => ({
+                        product_id: Number(item.id),
+                        quantity: Number(item.quantity || 0)
+                    }))
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || result.error) {
+                throw new Error(
+                    result.error ||
+                    `No se pudo guardar la ${actionName} de stock`
+                );
+            }
+
+            let message =
+                `✅ ${result.message}\n` +
+                `Costo contabilizado: ${formatMoney(result.total_cost)}`;
+
+            if (result.advertencia) {
+                message += `\n\n⚠️ ${result.advertencia}`;
+            }
+
+            alert(message);
+
+            setMovementItems([]);
+            setMovementNotes("");
+            setMovementReason("STOCK_CONTROL");
+            setMovementSelectedProduct("");
+
+            await Promise.all([
+                loadProducts(),
+                loadStockMovements()
+            ]);
+        } catch (error) {
+            alert(`❌ ${error.message}`);
+        } finally {
+            setSavingMovement(false);
+        }
+    }
+
+    async function deleteStockMovement(movement) {
+        const type = String(
+            movement.movement_type || "OUT"
+        ).toUpperCase();
+
+        const actionName =
+            type === "IN" ? "alta" : "baja";
+
+        const explanation =
+            type === "IN"
+                ? (
+                    "Se descontarán las unidades agregadas y se eliminará " +
+                    "el lote creado por el ajuste. Solo se podrá eliminar " +
+                    "si esas unidades todavía no fueron utilizadas."
+                )
+                : (
+                    "Se devolverán las unidades a los productos y a sus lotes."
+                );
+
+        const confirmed = window.confirm(
+            `¿Eliminar la ${actionName} ${movement.number}?\n\n` +
+            explanation +
+            "\nTambién se eliminará el asiento contable automático."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                `${API}/stock-movements/${movement.id}`,
+                {
+                    method: "DELETE"
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok || result.error) {
+                throw new Error(
+                    result.error ||
+                    `No se pudo eliminar la ${actionName} de stock`
+                );
+            }
+
+            alert(`✅ ${result.message}`);
+
+            await Promise.all([
+                loadProducts(),
+                loadStockMovements()
+            ]);
+        } catch (error) {
+            alert(`❌ ${error.message}`);
+        }
+    }
+
     async function historyChanged() {
         await loadAll();
         setHistoryVersion((value) => value + 1);
     }
+
+    const movementActionLabel =
+        movementType === "IN" ? "alta" : "baja";
 
     return (
         <div>
@@ -508,7 +771,7 @@ export default function Sales() {
                     style={{ ...styles.input, width: 360 }}
                 >
                     <option value="">Seleccionar producto</option>
-                    {products.map((product) => (
+                    {sortedProducts.map((product) => (
                         <option key={product.id} value={product.id}>
                             {product.name} — stock {Number(product.stock || 0)}
                         </option>
@@ -672,6 +935,283 @@ export default function Sales() {
                 </button>
             </div>
 
+            <div style={styles.card}>
+                <h3>📦 Control de productos</h3>
+
+                <p>
+                    Usá <b>Alta</b> cuando el conteo físico tenga más
+                    unidades que el sistema, y <b>Baja</b> cuando tenga
+                    menos o cuando retires productos por testeo, consumo
+                    personal u obsequios.
+                </p>
+
+                <div style={styles.formGrid}>
+                    <div>
+                        <label>Tipo de ajuste</label>
+                        <br />
+                        <select
+                            value={movementType}
+                            onChange={(event) =>
+                                changeMovementType(event.target.value)
+                            }
+                            style={styles.input}
+                        >
+                            <option value="OUT">
+                                Baja — descontar stock
+                            </option>
+                            <option value="IN">
+                                Alta — agregar stock
+                            </option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label>Fecha</label>
+                        <br />
+                        <input
+                            type="date"
+                            value={movementDate}
+                            onChange={(event) =>
+                                setMovementDate(event.target.value)
+                            }
+                            style={styles.input}
+                        />
+                    </div>
+
+                    <div>
+                        <label>Motivo</label>
+                        <br />
+                        <select
+                            value={
+                                movementType === "IN"
+                                    ? "STOCK_CONTROL"
+                                    : movementReason
+                            }
+                            onChange={(event) =>
+                                setMovementReason(event.target.value)
+                            }
+                            disabled={movementType === "IN"}
+                            style={styles.input}
+                        >
+                            {STOCK_MOVEMENT_REASONS.map((reason) => (
+                                <option
+                                    key={reason.value}
+                                    value={reason.value}
+                                >
+                                    {reason.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        {movementType === "IN" && (
+                            <div style={styles.helpText}>
+                                Las altas se registran únicamente por
+                                control de stock.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <br />
+
+                <label>Observación</label>
+                <br />
+                <textarea
+                    value={movementNotes}
+                    onChange={(event) =>
+                        setMovementNotes(event.target.value)
+                    }
+                    placeholder={
+                        movementType === "IN"
+                            ? (
+                                "Ejemplo: sobrante encontrado durante " +
+                                "el conteo físico"
+                            )
+                            : (
+                                "Detalle del control, destinatario del " +
+                                "regalo o prueba realizada"
+                            )
+                    }
+                    rows="3"
+                    style={{
+                        width: "650px",
+                        maxWidth: "100%",
+                        padding: 8,
+                        boxSizing: "border-box"
+                    }}
+                />
+
+                <hr style={{ margin: "25px 0" }} />
+
+                <h3>
+                    Productos a{" "}
+                    {movementType === "IN"
+                        ? "agregar"
+                        : "descontar"}
+                </h3>
+
+                <select
+                    value={movementSelectedProduct}
+                    onChange={(event) =>
+                        setMovementSelectedProduct(event.target.value)
+                    }
+                    style={{ ...styles.input, width: 360 }}
+                >
+                    <option value="">Seleccionar producto</option>
+
+                    {sortedProducts.map((product) => (
+                        <option
+                            key={product.id}
+                            value={product.id}
+                        >
+                            {product.name} — stock actual{" "}
+                            {Number(product.stock || 0)}
+                        </option>
+                    ))}
+                </select>
+
+                <button
+                    type="button"
+                    onClick={addMovementProduct}
+                    style={{ marginLeft: 10 }}
+                >
+                    ➕ Agregar producto
+                </button>
+
+                <div style={{ marginTop: 18 }}>
+                    {movementItems.length === 0 && (
+                        <p>No hay productos agregados.</p>
+                    )}
+
+                    {movementItems.map((item, index) => (
+                        <div
+                            key={`${item.id}-${index}`}
+                            style={styles.itemCard}
+                        >
+                            <strong>{item.name}</strong>
+
+                            <div style={styles.itemGrid}>
+                                <div>
+                                    <label>Cantidad</label>
+                                    <br />
+                                    <input
+                                        type="number"
+                                        min="0.0001"
+                                        step="any"
+                                        value={item.quantity}
+                                        onChange={(event) =>
+                                            updateMovementQuantity(
+                                                index,
+                                                event.target.value
+                                            )
+                                        }
+                                        style={{ width: 105 }}
+                                    />
+                                </div>
+
+                                <div>
+                                    Stock actual:{" "}
+                                    <b>{Number(item.stock || 0)}</b>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        removeMovementItem(index)
+                                    }
+                                    style={styles.removeButton}
+                                >
+                                    Quitar
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={saveStockMovement}
+                    disabled={savingMovement}
+                    style={styles.saveButton}
+                >
+                    {savingMovement
+                        ? "Guardando..."
+                        : `💾 Guardar ${movementActionLabel} de stock`}
+                </button>
+            </div>
+
+            <div style={styles.card}>
+                <h3>Historial de control de productos</h3>
+
+                {stockMovements.length === 0 && (
+                    <p>No hay ajustes de stock registrados.</p>
+                )}
+
+                {stockMovements.map((movement) => {
+                    const type = String(
+                        movement.movement_type || "OUT"
+                    ).toUpperCase();
+
+                    const actionName =
+                        type === "IN" ? "Alta" : "Baja";
+
+                    return (
+                        <div
+                            key={movement.id}
+                            style={styles.historyMovement}
+                        >
+                            <div style={styles.historyMovementContent}>
+                                <div>
+                                    <b>
+                                        {actionName} {movement.number}
+                                        {" — "}
+                                        {movement.reason_label}
+                                    </b>
+
+                                    <div>Fecha: {movement.date}</div>
+
+                                    <div>
+                                        Costo contabilizado:{" "}
+                                        {formatMoney(
+                                            movement.total_cost
+                                        )}
+                                    </div>
+
+                                    {movement.notes && (
+                                        <div>
+                                            Observación: {movement.notes}
+                                        </div>
+                                    )}
+
+                                    <ul>
+                                        {(movement.items || []).map(
+                                            (item) => (
+                                                <li key={item.id}>
+                                                    {item.name}:{" "}
+                                                    {Number(
+                                                        item.quantity || 0
+                                                    )}{" "}
+                                                    unidad/es
+                                                </li>
+                                            )
+                                        )}
+                                    </ul>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        deleteStockMovement(movement)
+                                    }
+                                >
+                                    🗑️ Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
             <SaleHistory
                 version={historyVersion}
                 onEdit={startEditSale}
@@ -766,5 +1306,16 @@ const styles = {
     saveButton: {
         marginTop: 18,
         padding: "9px 14px"
+    },
+    historyMovement: {
+        borderBottom: "1px solid #ddd",
+        padding: "12px 0"
+    },
+    historyMovementContent: {
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 20,
+        alignItems: "start",
+        flexWrap: "wrap"
     }
 };
