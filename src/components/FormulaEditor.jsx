@@ -2,6 +2,30 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
+function normalizeText(value) {
+    return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+}
+
+function isPackagingMaterial(item) {
+    const material = item?.raw_material || {};
+    const category = normalizeText(material.category);
+    const name = normalizeText(material.name);
+
+    return (
+        category.includes("envase")
+        ||
+        category.includes("etiqueta")
+        ||
+        name.includes("envase")
+        ||
+        name.includes("etiqueta")
+    );
+}
+
 export default function FormulaEditor({ formula }) {
     const [materials, setMaterials] = useState([]);
     const [ingredients, setIngredients] = useState([]);
@@ -52,6 +76,12 @@ export default function FormulaEditor({ formula }) {
         Number(value || 0).toLocaleString("es-AR", {
             minimumFractionDigits: 0,
             maximumFractionDigits: 4
+        });
+
+    const formatPercentage = (value) =>
+        Number(value || 0).toLocaleString("es-AR", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
         });
 
     useEffect(() => {
@@ -146,6 +176,18 @@ export default function FormulaEditor({ formula }) {
             outputType,
             formula?.output_raw_material_id
         ]
+    );
+
+    const percentageBase = useMemo(
+        () =>
+            ingredients.reduce(
+                (total, item) =>
+                    isPackagingMaterial(item)
+                        ? total
+                        : total + Number(item.quantity || 0),
+                0
+            ),
+        [ingredients]
     );
 
     async function addIngredient() {
@@ -361,7 +403,7 @@ export default function FormulaEditor({ formula }) {
                     <tr>
                         <th>Materia Prima</th>
                         <th>Cantidad</th>
-                        <th>Unidad</th>
+                        <th>Porcentaje</th>
                         <th>Costo unitario</th>
                         <th>Costo utilizado</th>
                         <th></th>
@@ -389,6 +431,20 @@ export default function FormulaEditor({ formula }) {
                                 *
                                 unitCost;
 
+                            const excludedFromPercentage =
+                                isPackagingMaterial(item);
+
+                            const percentage =
+                                !excludedFromPercentage
+                                &&
+                                percentageBase > 0
+                                    ? (
+                                        Number(item.quantity || 0)
+                                        /
+                                        percentageBase
+                                    ) * 100
+                                    : 0;
+
                             return (
                                 <tr key={item.id}>
                                     <td>
@@ -405,7 +461,11 @@ export default function FormulaEditor({ formula }) {
                                         {formatNumber(item.quantity)}
                                     </td>
                                     <td>
-                                        {item.raw_material?.unit}
+                                        {excludedFromPercentage
+                                            ? "—"
+                                            : `${formatPercentage(
+                                                percentage
+                                            )}%`}
                                     </td>
                                     <td>
                                         {formatMoney(unitCost)}
@@ -430,6 +490,11 @@ export default function FormulaEditor({ formula }) {
                     )}
                 </tbody>
             </table>
+
+            <p style={styles.help}>
+                El porcentaje se calcula solo sobre los ingredientes.
+                Los envases y las etiquetas quedan excluidos.
+            </p>
         </div>
     );
 }
@@ -467,5 +532,10 @@ const styles = {
     table: {
         width: "100%",
         borderCollapse: "collapse"
+    },
+    help: {
+        marginTop: 10,
+        fontSize: 12,
+        color: "#666"
     }
 };
