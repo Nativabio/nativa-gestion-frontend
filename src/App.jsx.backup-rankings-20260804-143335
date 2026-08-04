@@ -7,7 +7,6 @@ import Lots from "./components/Lots";
 import Suppliers from "./components/Suppliers";
 import Sales from "./components/Sales";
 import Accounting from "./components/Accounting";
-import DashboardRankings from "./components/DashboardRankings";
 import {
   getStoredUsername,
   loginRequest,
@@ -577,8 +576,6 @@ function Dashboard() {
 
       </div>
 
-
-      <DashboardRankings />
 
       <div style={styles.dashboardSections}>
 
