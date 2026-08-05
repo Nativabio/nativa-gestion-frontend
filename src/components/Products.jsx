@@ -79,11 +79,13 @@ export default function Products() {
         const confirmed = window.confirm(
             `¿Eliminar definitivamente ${product.name}?\n\n`
             +
-            "Primero deben haberse eliminado sus lotes y fórmulas. "
+            "Esta eliminación temporal no se bloqueará por ventas, "
             +
-            "Las ventas, los movimientos de stock y los asientos "
+            "movimientos o compras anteriores. Esos registros se "
             +
-            "contables no se modificarán automáticamente."
+            "conservarán y solo se quitará su vínculo directo con el "
+            +
+            "producto. Los asientos contables no se modificarán."
         );
 
         if (!confirmed) {
@@ -111,7 +113,13 @@ export default function Products() {
                 return;
             }
 
-            alert(`✅ ${data.message}`);
+            let successMessage = `✅ ${data.message}`;
+
+            if (data.warning) {
+                successMessage += `\n\n⚠️ ${data.warning}`;
+            }
+
+            alert(successMessage);
             await loadProducts();
         } catch {
             alert("❌ No se pudo conectar con el backend");
