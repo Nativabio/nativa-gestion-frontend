@@ -19,11 +19,12 @@ export default function Purchases() {
     const [paymentMethod, setPaymentMethod] = useState("Caja");
     const [shippingCost, setShippingCost] = useState(0);
     const [materials, setMaterials] = useState([]);
-    const [selectedMaterial, setSelectedMaterial] = useState("");
+    const [resaleProducts, setResaleProducts] = useState([]);
+    const [selectedInventory, setSelectedInventory] = useState("");
     const [items, setItems] = useState([]);
 
     useEffect(() => {
-        loadMaterials();
+        loadInventoryOptions();
         loadSuppliers();
         loadNextPurchaseNumber();
     }, []);
@@ -38,10 +39,32 @@ export default function Purchases() {
         }
     }
 
-    async function loadMaterials() {
-        const response = await fetch(`${API}/raw-materials`);
-        const data = await response.json();
-        setMaterials(Array.isArray(data) ? data : []);
+    async function loadInventoryOptions() {
+        try {
+            const [materialsResponse, productsResponse] = await Promise.all([
+                fetch(`${API}/raw-materials`),
+                fetch(`${API}/products`)
+            ]);
+
+            const [materialsData, productsData] = await Promise.all([
+                materialsResponse.json(),
+                productsResponse.json()
+            ]);
+
+            setMaterials(
+                Array.isArray(materialsData) ? materialsData : []
+            );
+            setResaleProducts(
+                Array.isArray(productsData)
+                    ? productsData.filter(
+                        (product) => product.product_type === "RESALE"
+                    )
+                    : []
+            );
+        } catch {
+            setMaterials([]);
+            setResaleProducts([]);
+        }
     }
 
     async function loadSuppliers() {
@@ -50,17 +73,25 @@ export default function Purchases() {
         setSuppliers(Array.isArray(data) ? data : []);
     }
 
-    function addMaterial() {
-        if (selectedMaterial === "") return;
+    function addInventoryItem() {
+        if (!selectedInventory) return;
 
-        const material = materials.find(
-            (item) => item.id === Number(selectedMaterial)
+        const [itemType, rawId] = selectedInventory.split(":");
+        const inventoryId = Number(rawId);
+
+        const source =
+            itemType === "RESALE"
+                ? resaleProducts
+                : materials;
+        const inventory = source.find(
+            (item) => item.id === inventoryId
         );
 
-        if (!material) return;
+        if (!inventory) return;
 
+        const key = `${itemType}:${inventoryId}`;
         const existingIndex = items.findIndex(
-            (item) => item.id === material.id
+            (item) => item.key === key
         );
 
         if (existingIndex >= 0) {
@@ -78,14 +109,29 @@ export default function Purchases() {
             setItems((current) => [
                 ...current,
                 {
-                    ...material,
+                    key,
+                    item_type: itemType,
+                    inventory_id: inventory.id,
+                    raw_material_id:
+                        itemType === "RAW_MATERIAL"
+                            ? inventory.id
+                            : null,
+                    product_id:
+                        itemType === "RESALE"
+                            ? inventory.id
+                            : null,
+                    name: inventory.name,
+                    unit:
+                        itemType === "RESALE"
+                            ? "unidad"
+                            : inventory.unit || "",
                     quantity: 1,
                     cost: 0
                 }
             ]);
         }
 
-        setSelectedMaterial("");
+        setSelectedInventory("");
     }
 
     function updateItem(index, field, value) {
@@ -103,13 +149,11 @@ export default function Purchases() {
 
     function removeItem(index) {
         setItems((currentItems) =>
-            currentItems.filter(
-                (_, itemIndex) => itemIndex !== index
-            )
+            currentItems.filter((_, itemIndex) => itemIndex !== index)
         );
     }
 
-    const materialsSubtotal = useMemo(
+    const inventorySubtotal = useMemo(
         () =>
             items.reduce(
                 (sum, item) => sum + Number(item.cost || 0),
@@ -121,16 +165,16 @@ export default function Purchases() {
     const shipping = Math.max(Number(shippingCost || 0), 0);
 
     function shippingShare(item) {
-        if (shipping <= 0 || materialsSubtotal <= 0) return 0;
+        if (shipping <= 0 || inventorySubtotal <= 0) return 0;
 
         return (
-            shipping *
-            Number(item.cost || 0) /
-            materialsSubtotal
+            shipping
+            * Number(item.cost || 0)
+            / inventorySubtotal
         );
     }
 
-    const purchaseTotal = materialsSubtotal + shipping;
+    const purchaseTotal = inventorySubtotal + shipping;
 
     function formatMoney(value) {
         return Number(value || 0).toLocaleString("es-AR", {
@@ -150,21 +194,18 @@ export default function Purchases() {
         setShippingCost(0);
         setDate(today);
         setEditingPurchase(null);
-        setSelectedMaterial("");
+        setSelectedInventory("");
         loadNextPurchaseNumber();
     }
 
     function startEditPurchase(purchase) {
         const purchaseItems = purchase.items || [];
-        const totalStoredMaterialPrice = purchaseItems.reduce(
+        const totalStoredPrice = purchaseItems.reduce(
             (sum, item) => sum + Number(item.price || 0),
             0
         );
         const savedShipping = Number(purchase.shipping_cost || 0);
-        const baseTotal = Math.max(
-            totalStoredMaterialPrice - savedShipping,
-            0
-        );
+        const baseTotal = Math.max(totalStoredPrice - savedShipping, 0);
 
         setEditingPurchase(purchase);
         setPurchaseNumber(purchase.number || "");
@@ -177,31 +218,52 @@ export default function Purchases() {
 
         setItems(
             purchaseItems.map((purchaseItem) => {
-                const material = materials.find(
-                    (item) =>
-                        item.id === Number(purchaseItem.raw_material_id)
+                const itemType =
+                    purchaseItem.item_type === "RESALE"
+                        ? "RESALE"
+                        : "RAW_MATERIAL";
+                const inventoryId = Number(
+                    itemType === "RESALE"
+                        ? purchaseItem.product_id
+                        : purchaseItem.raw_material_id
+                );
+                const source =
+                    itemType === "RESALE"
+                        ? resaleProducts
+                        : materials;
+                const inventory = source.find(
+                    (item) => item.id === inventoryId
                 );
 
                 let basePrice = Number(purchaseItem.price || 0);
 
-                if (
-                    savedShipping > 0 &&
-                    totalStoredMaterialPrice > 0
-                ) {
+                if (savedShipping > 0 && totalStoredPrice > 0) {
                     basePrice =
-                        Number(purchaseItem.price || 0) *
-                        baseTotal /
-                        totalStoredMaterialPrice;
+                        Number(purchaseItem.price || 0)
+                        * baseTotal
+                        / totalStoredPrice;
                 }
 
                 return {
-                    ...(material || {}),
-                    id: Number(purchaseItem.raw_material_id),
+                    key: `${itemType}:${inventoryId}`,
+                    item_type: itemType,
+                    inventory_id: inventoryId,
+                    raw_material_id:
+                        itemType === "RAW_MATERIAL"
+                            ? inventoryId
+                            : null,
+                    product_id:
+                        itemType === "RESALE"
+                            ? inventoryId
+                            : null,
                     name:
-                        purchaseItem.name ||
-                        material?.name ||
-                        "Materia prima",
-                    unit: purchaseItem.unit || material?.unit || "",
+                        purchaseItem.name
+                        || inventory?.name
+                        || "Artículo",
+                    unit:
+                        purchaseItem.unit
+                        || inventory?.unit
+                        || (itemType === "RESALE" ? "unidad" : ""),
                     quantity: Number(purchaseItem.quantity || 0),
                     cost: Number(basePrice.toFixed(2))
                 };
@@ -218,14 +280,14 @@ export default function Purchases() {
         }
 
         if (items.length === 0) {
-            alert("Agregá al menos una materia prima");
+            alert("Agregá al menos una materia prima o producto de reventa");
             return;
         }
 
         const invalidItem = items.find(
             (item) =>
-                Number(item.quantity || 0) <= 0 ||
-                Number(item.cost || 0) < 0
+                Number(item.quantity || 0) <= 0
+                || Number(item.cost || 0) < 0
         );
 
         if (invalidItem) {
@@ -241,7 +303,9 @@ export default function Purchases() {
             shipping_cost: shipping,
             notes,
             items: items.map((item) => ({
-                raw_material_id: item.id,
+                item_type: item.item_type,
+                raw_material_id: item.raw_material_id,
+                product_id: item.product_id,
                 quantity: Number(item.quantity || 0),
                 price: Number(item.cost || 0)
             })),
@@ -269,8 +333,7 @@ export default function Purchases() {
 
                 if (!response.ok || result.error) {
                     throw new Error(
-                        result.error ||
-                        "No se pudo modificar la compra"
+                        result.error || "No se pudo modificar la compra"
                     );
                 }
             } else {
@@ -317,8 +380,7 @@ export default function Purchases() {
 
                 if (!itemsResponse.ok || result.error) {
                     throw new Error(
-                        result.error ||
-                        "Error guardando las materias primas"
+                        result.error || "Error guardando los artículos"
                     );
                 }
             }
@@ -330,8 +392,7 @@ export default function Purchases() {
             );
 
             resetForm();
-            await loadMaterials();
-
+            await loadInventoryOptions();
             setHistoryVersion((current) => current + 1);
         } catch (error) {
             alert(error.message);
@@ -387,9 +448,7 @@ export default function Purchases() {
                         <input
                             type="date"
                             value={date}
-                            onChange={(event) =>
-                                setDate(event.target.value)
-                            }
+                            onChange={(event) => setDate(event.target.value)}
                             style={styles.input}
                         />
                     </div>
@@ -443,7 +502,7 @@ export default function Purchases() {
                             style={styles.input}
                         />
                         <div style={styles.helpText}>
-                            Se prorratea según el precio de cada materia prima.
+                            Se prorratea según el precio de cada artículo.
                         </div>
                     </div>
 
@@ -451,9 +510,7 @@ export default function Purchases() {
                         <label>Observaciones</label>
                         <input
                             value={notes}
-                            onChange={(event) =>
-                                setNotes(event.target.value)
-                            }
+                            onChange={(event) => setNotes(event.target.value)}
                             style={styles.input}
                         />
                     </div>
@@ -461,124 +518,160 @@ export default function Purchases() {
 
                 <hr style={styles.separator} />
 
+                <div style={styles.infoBox}>
+                    Las materias primas aumentan el stock de insumos. Los
+                    productos de reventa aumentan el stock de mercadería y no
+                    requieren fórmula ni lote de producción.
+                </div>
+
                 <div style={styles.addRow}>
                     <select
-                        value={selectedMaterial}
+                        value={selectedInventory}
                         onChange={(event) =>
-                            setSelectedMaterial(event.target.value)
+                            setSelectedInventory(event.target.value)
                         }
                         style={{
                             ...styles.input,
-                            width: 350,
+                            width: 420,
                             maxWidth: "100%"
                         }}
                     >
                         <option value="">
-                            Seleccionar materia prima
+                            Seleccionar artículo comprado
                         </option>
-                        {materials.map((material) => (
-                            <option key={material.id} value={material.id}>
-                                {material.name}
-                            </option>
-                        ))}
+
+                        <optgroup label="Materias primas">
+                            {materials.map((material) => (
+                                <option
+                                    key={`RAW_MATERIAL:${material.id}`}
+                                    value={`RAW_MATERIAL:${material.id}`}
+                                >
+                                    {material.name}
+                                </option>
+                            ))}
+                        </optgroup>
+
+                        <optgroup label="Productos de reventa">
+                            {resaleProducts.map((product) => (
+                                <option
+                                    key={`RESALE:${product.id}`}
+                                    value={`RESALE:${product.id}`}
+                                >
+                                    {product.name}
+                                </option>
+                            ))}
+                        </optgroup>
                     </select>
 
-                    <button onClick={addMaterial} style={styles.addButton}>
+                    <button
+                        onClick={addInventoryItem}
+                        style={styles.addButton}
+                    >
                         ➕ Agregar
                     </button>
                 </div>
 
-                <div style={styles.itemsHeader}>
-                    <div>Materia prima</div>
-                    <div>Cantidad</div>
-                    <div>Precio comprado</div>
-                    <div>Envío asignado</div>
-                    <div>Costo final</div>
-                    <div></div>
+                <div style={styles.itemsScroller}>
+                    <div style={styles.itemsHeader}>
+                        <div>Artículo</div>
+                        <div>Tipo</div>
+                        <div>Cantidad</div>
+                        <div>Precio comprado</div>
+                        <div>Envío asignado</div>
+                        <div>Costo final</div>
+                        <div></div>
+                    </div>
+
+                    {items.length === 0 && (
+                        <p style={styles.emptyText}>
+                            No hay artículos agregados.
+                        </p>
+                    )}
+
+                    {items.map((item, index) => {
+                        const allocatedShipping = shippingShare(item);
+                        const finalCost =
+                            Number(item.cost || 0) + allocatedShipping;
+
+                        return (
+                            <div key={item.key} style={styles.itemRow}>
+                                <div style={styles.itemName}>
+                                    {item.name}
+                                    <span style={styles.unitText}>
+                                        {item.unit ? ` (${item.unit})` : ""}
+                                    </span>
+                                </div>
+
+                                <div>
+                                    <span
+                                        style={
+                                            item.item_type === "RESALE"
+                                                ? styles.resaleBadge
+                                                : styles.materialBadge
+                                        }
+                                    >
+                                        {item.item_type === "RESALE"
+                                            ? "Reventa"
+                                            : "Materia prima"}
+                                    </span>
+                                </div>
+
+                                <input
+                                    type="number"
+                                    min="0.0001"
+                                    step="any"
+                                    value={item.quantity}
+                                    onChange={(event) =>
+                                        updateItem(
+                                            index,
+                                            "quantity",
+                                            event.target.value
+                                        )
+                                    }
+                                    style={styles.compactInput}
+                                />
+
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={item.cost}
+                                    onChange={(event) =>
+                                        updateItem(
+                                            index,
+                                            "cost",
+                                            event.target.value
+                                        )
+                                    }
+                                    style={styles.compactInput}
+                                />
+
+                                <div style={styles.moneyCell}>
+                                    {formatMoney(allocatedShipping)}
+                                </div>
+
+                                <div style={styles.totalCell}>
+                                    {formatMoney(finalCost)}
+                                </div>
+
+                                <button
+                                    onClick={() => removeItem(index)}
+                                    style={styles.removeButton}
+                                    title="Quitar artículo"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        );
+                    })}
                 </div>
-
-                {items.length === 0 && (
-                    <p style={styles.emptyText}>
-                        No hay materias primas agregadas.
-                    </p>
-                )}
-
-                {items.map((item, index) => {
-                    const allocatedShipping = shippingShare(item);
-                    const finalCost =
-                        Number(item.cost || 0) + allocatedShipping;
-
-                    return (
-                        <div
-                            key={`${item.id}-${index}`}
-                            style={styles.itemRow}
-                        >
-                            <div style={styles.itemName}>
-                                {item.name}
-                                <span style={styles.unitText}>
-                                    {item.unit ? ` (${item.unit})` : ""}
-                                </span>
-                            </div>
-
-                            <input
-                                type="number"
-                                min="0.0001"
-                                step="any"
-                                value={item.quantity}
-                                onChange={(event) =>
-                                    updateItem(
-                                        index,
-                                        "quantity",
-                                        event.target.value
-                                    )
-                                }
-                                style={styles.compactInput}
-                            />
-
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.cost}
-                                onChange={(event) =>
-                                    updateItem(
-                                        index,
-                                        "cost",
-                                        event.target.value
-                                    )
-                                }
-                                style={styles.compactInput}
-                            />
-
-                            <div style={styles.moneyCell}>
-                                {formatMoney(allocatedShipping)}
-                            </div>
-
-                            <div style={styles.totalCell}>
-                                {formatMoney(finalCost)}
-                            </div>
-
-                            <button
-                                onClick={() => removeItem(index)}
-                                style={styles.removeButton}
-                                title="Quitar materia prima"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    );
-                })}
 
                 <div style={styles.summary}>
                     <div>
-                        Materias primas:{" "}
-                        <strong>
-                            {formatMoney(materialsSubtotal)}
-                        </strong>
+                        Artículos: <strong>{formatMoney(inventorySubtotal)}</strong>
                     </div>
                     <div>
-                        Envío:{" "}
-                        <strong>{formatMoney(shipping)}</strong>
+                        Envío: <strong>{formatMoney(shipping)}</strong>
                     </div>
                     <div style={styles.grandTotal}>
                         Total: {formatMoney(purchaseTotal)}
@@ -614,7 +707,7 @@ export default function Purchases() {
                 key={historyVersion}
                 onEdit={startEditPurchase}
                 onChanged={async () => {
-                    await loadMaterials();
+                    await loadInventoryOptions();
                     await loadNextPurchaseNumber();
                 }}
             />
@@ -635,8 +728,7 @@ const styles = {
     },
     formGrid: {
         display: "grid",
-        gridTemplateColumns:
-            "repeat(auto-fit, minmax(190px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
         gap: 12,
         alignItems: "start"
     },
@@ -659,6 +751,15 @@ const styles = {
         color: "#666"
     },
     separator: { margin: "18px 0" },
+    infoBox: {
+        marginBottom: 14,
+        padding: 11,
+        border: "1px solid #d7dfd3",
+        borderRadius: 8,
+        background: "#f8fbf6",
+        color: "#44513f",
+        fontSize: 13
+    },
     addRow: {
         display: "flex",
         gap: 8,
@@ -670,10 +771,14 @@ const styles = {
         padding: "7px 12px",
         cursor: "pointer"
     },
+    itemsScroller: {
+        width: "100%",
+        overflowX: "auto"
+    },
     itemsHeader: {
         display: "grid",
         gridTemplateColumns:
-            "minmax(180px, 2fr) 100px 130px 130px 130px 38px",
+            "minmax(180px, 2fr) 115px 100px 130px 130px 130px 38px",
         gap: 8,
         alignItems: "center",
         padding: "7px 9px",
@@ -681,23 +786,41 @@ const styles = {
         fontSize: 12,
         fontWeight: "bold",
         background: "#f7f7f7",
-        overflowX: "auto"
+        minWidth: 850
     },
     itemRow: {
         display: "grid",
         gridTemplateColumns:
-            "minmax(180px, 2fr) 100px 130px 130px 130px 38px",
+            "minmax(180px, 2fr) 115px 100px 130px 130px 130px 38px",
         gap: 8,
         alignItems: "center",
         padding: "7px 9px",
         borderBottom: "1px solid #eee",
-        minWidth: 720
+        minWidth: 850
     },
     itemName: { fontWeight: "bold" },
     unitText: {
         fontSize: 12,
         fontWeight: "normal",
         color: "#666"
+    },
+    materialBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 10,
+        background: "#e8f1e5",
+        color: "#34522d",
+        fontSize: 11,
+        whiteSpace: "nowrap"
+    },
+    resaleBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 10,
+        background: "#fff3cd",
+        color: "#6a5200",
+        fontSize: 11,
+        whiteSpace: "nowrap"
     },
     moneyCell: {
         fontSize: 13,

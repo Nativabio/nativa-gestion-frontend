@@ -37,8 +37,8 @@ export default function PurchaseHistory({ onEdit, onChanged }) {
     async function deletePurchase(id) {
         const confirmed = window.confirm(
             "¿Eliminar esta compra?\n\n" +
-            "Se descontarán las materias primas incorporadas y se " +
-            "eliminará el asiento contable automático."
+            "Se descontarán las materias primas y los productos de reventa " +
+            "incorporados, y se eliminará el asiento contable automático."
         );
 
         if (!confirmed) return;
@@ -91,10 +91,14 @@ export default function PurchaseHistory({ onEdit, onChanged }) {
     function purchaseDetail(purchase) {
         const materialItems = (purchase.items || []).map((item) => {
             const unit = item.unit ? ` ${item.unit}` : "";
+            const type =
+                item.item_type === "RESALE"
+                    ? "Reventa"
+                    : "Materia prima";
 
             return (
                 `${item.name} ` +
-                `(${formatNumber(item.quantity)}${unit})`
+                `(${formatNumber(item.quantity)}${unit}) · ${type}`
             );
         });
 
