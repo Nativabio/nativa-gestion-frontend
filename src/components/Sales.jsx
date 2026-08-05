@@ -27,6 +27,10 @@ export default function Sales() {
     const [returnedQuantity, setReturnedQuantity] = useState("1");
     const [returnedContainers, setReturnedContainers] = useState([]);
 
+    const [packagingMaterialId, setPackagingMaterialId] = useState("");
+    const [packagingQuantity, setPackagingQuantity] = useState("1");
+    const [packagingItems, setPackagingItems] = useState([]);
+
     const [sales, setSales] = useState([]);
     const [historyVersion, setHistoryVersion] = useState(0);
     const [editingSaleId, setEditingSaleId] = useState(null);
@@ -126,6 +130,31 @@ export default function Sales() {
                 )
             ),
         [products]
+    );
+
+    const packagingMaterials = useMemo(
+        () =>
+            rawMaterials.filter(
+                (material) =>
+                    String(material.category || "")
+                        .trim()
+                        .toLowerCase() === "packaging"
+            ),
+        [rawMaterials]
+    );
+
+    const packagingCost = useMemo(
+        () =>
+            packagingItems.reduce(
+                (sum, item) =>
+                    sum
+                    +
+                    Number(item.quantity || 0)
+                    *
+                    Number(item.unit_cost || 0),
+                0
+            ),
+        [packagingItems]
     );
 
     const clientOptions = useMemo(() => {
@@ -276,6 +305,70 @@ export default function Sales() {
         );
     }
 
+    function addPackagingItem() {
+        const quantity = Number(packagingQuantity || 0);
+
+        if (!packagingMaterialId) {
+            alert("Seleccioná el packaging utilizado");
+            return;
+        }
+
+        if (quantity <= 0) {
+            alert("La cantidad de packaging debe ser mayor a cero");
+            return;
+        }
+
+        const material = packagingMaterials.find(
+            (item) => Number(item.id) === Number(packagingMaterialId)
+        );
+
+        if (!material) {
+            alert(
+                "La materia prima debe tener la categoría Packaging"
+            );
+            return;
+        }
+
+        setPackagingItems((current) => {
+            const existing = current.find(
+                (item) =>
+                    Number(item.raw_material_id) === Number(material.id)
+            );
+
+            if (existing) {
+                return current.map((item) =>
+                    Number(item.raw_material_id) === Number(material.id)
+                        ? {
+                            ...item,
+                            quantity: Number(item.quantity || 0) + quantity,
+                            unit_cost: Number(material.cost || 0)
+                        }
+                        : item
+                );
+            }
+
+            return [
+                ...current,
+                {
+                    raw_material_id: material.id,
+                    name: material.name,
+                    unit: material.unit || "unid.",
+                    quantity,
+                    unit_cost: Number(material.cost || 0)
+                }
+            ];
+        });
+
+        setPackagingMaterialId("");
+        setPackagingQuantity("1");
+    }
+
+    function removePackagingItem(index) {
+        setPackagingItems((current) =>
+            current.filter((_, itemIndex) => itemIndex !== index)
+        );
+    }
+
     function cleanSaleItems() {
         return items.map((item) => ({
             product_id: Number(item.id || item.product_id),
@@ -286,6 +379,13 @@ export default function Sales() {
 
     function cleanReturnedContainers() {
         return returnedContainers.map((item) => ({
+            raw_material_id: Number(item.raw_material_id),
+            quantity: Number(item.quantity || 0)
+        }));
+    }
+
+    function cleanPackagingItems() {
+        return packagingItems.map((item) => ({
             raw_material_id: Number(item.raw_material_id),
             quantity: Number(item.quantity || 0)
         }));
@@ -302,6 +402,15 @@ export default function Sales() {
             return;
         }
 
+        if (
+            packagingItems.some(
+                (item) => Number(item.quantity || 0) <= 0
+            )
+        ) {
+            alert("Las cantidades de packaging deben ser mayores a cero");
+            return;
+        }
+
         if (Number(shippingCost || 0) < 0) {
             alert("El costo de envío no puede ser negativo");
             return;
@@ -315,7 +424,8 @@ export default function Sales() {
                 date,
                 payment_method: paymentMethod,
                 shipping_cost: Number(shippingCost || 0),
-                returned_containers: cleanReturnedContainers()
+                returned_containers: cleanReturnedContainers(),
+                packaging_items: cleanPackagingItems()
             };
 
             let result;
@@ -368,7 +478,8 @@ export default function Sales() {
                         sale_id: sale.id,
                         items: cleanSaleItems(),
                         shipping_cost: Number(shippingCost || 0),
-                        returned_containers: cleanReturnedContainers()
+                        returned_containers: cleanReturnedContainers(),
+                        packaging_items: cleanPackagingItems()
                     })
                 });
 
@@ -431,6 +542,19 @@ export default function Sales() {
             }))
         );
 
+        setPackagingItems(
+            (sale.packaging_items || []).map((item) => ({
+                raw_material_id: item.raw_material_id,
+                name: item.name,
+                unit: item.unit || "unid.",
+                quantity: Number(item.quantity || 0),
+                unit_cost: Number(item.unit_cost || 0)
+            }))
+        );
+
+        setPackagingMaterialId("");
+        setPackagingQuantity("1");
+
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
@@ -446,6 +570,9 @@ export default function Sales() {
         setReturnedMaterialId("");
         setReturnedQuantity("1");
         setReturnedContainers([]);
+        setPackagingMaterialId("");
+        setPackagingQuantity("1");
+        setPackagingItems([]);
     }
 
     function changeMovementType(value) {
@@ -910,12 +1037,91 @@ export default function Sales() {
 
                 <hr style={{ margin: "25px 0" }} />
 
+                <h3>Packaging utilizado</h3>
+                <p style={styles.helpText}>
+                    Se descuenta del stock de materias primas y se registra como
+                    costo de Packaging. No modifica el importe cobrado.
+                </p>
+
+                {packagingMaterials.length === 0 && (
+                    <p style={styles.helpText}>
+                        No hay materias primas con la categoría Packaging.
+                    </p>
+                )}
+
+                <div style={styles.returnRow}>
+                    <select
+                        value={packagingMaterialId}
+                        onChange={(event) =>
+                            setPackagingMaterialId(event.target.value)
+                        }
+                        style={{ ...styles.input, width: 360 }}
+                    >
+                        <option value="">Seleccionar bolsa o caja</option>
+                        {packagingMaterials.map((material) => (
+                            <option key={material.id} value={material.id}>
+                                {material.name} — stock {Number(material.stock || 0)}
+                            </option>
+                        ))}
+                    </select>
+
+                    <input
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        value={packagingQuantity}
+                        onChange={(event) =>
+                            setPackagingQuantity(event.target.value)
+                        }
+                        style={{ width: 90, padding: 8 }}
+                    />
+
+                    <button
+                        type="button"
+                        onClick={addPackagingItem}
+                        disabled={packagingMaterials.length === 0}
+                    >
+                        ➕ Agregar packaging
+                    </button>
+                </div>
+
+                {packagingItems.map((item, index) => (
+                    <div
+                        key={`${item.raw_material_id}-${index}`}
+                        style={styles.returnedItem}
+                    >
+                        <span>
+                            {item.name}: <b>{item.quantity}</b> {item.unit}
+                            {" — "}
+                            costo {formatMoney(
+                                Number(item.quantity || 0)
+                                *
+                                Number(item.unit_cost || 0)
+                            )}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => removePackagingItem(index)}
+                        >
+                            Quitar
+                        </button>
+                    </div>
+                ))}
+
+                <hr style={{ margin: "25px 0" }} />
+
                 <div style={styles.totalBox}>
                     <div>
                         Productos: <b>{formatMoney(productsSubtotal)}</b>
                     </div>
                     <div>
                         Envío: <b>{formatMoney(shippingCost)}</b>
+                    </div>
+                    <div>
+                        Costo de packaging: <b>{formatMoney(packagingCost)}</b>
+                    </div>
+                    <div style={styles.helpText}>
+                        El packaging no aumenta el total cobrado.
                     </div>
                     <h2 style={{ margin: "8px 0 0" }}>
                         Total: {formatMoney(total)}
