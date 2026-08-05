@@ -76,21 +76,46 @@ export default function Products() {
     }
 
     async function deleteProduct(product) {
-        if (!window.confirm(`¿Eliminar ${product.name}?`)) {
+        const confirmed = window.confirm(
+            `¿Eliminar definitivamente ${product.name}?\n\n`
+            +
+            "Primero deben haberse eliminado sus lotes y fórmulas. "
+            +
+            "Las ventas, los movimientos de stock y los asientos "
+            +
+            "contables no se modificarán automáticamente."
+        );
+
+        if (!confirmed) {
             return;
         }
 
-        const response = await fetch(`${API}/products/${product.id}`, {
-            method: "DELETE"
-        });
-        const data = await response.json();
+        try {
+            const response = await fetch(
+                `${API}/products/${product.id}`,
+                {
+                    method: "DELETE"
+                }
+            );
 
-        if (!response.ok || data.error) {
-            alert(data.error || "No se pudo eliminar el producto");
-            return;
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                alert(
+                    `❌ ${
+                        data.error
+                        ||
+                        "No se pudo eliminar el producto"
+                    }`
+                );
+                return;
+            }
+
+            alert(`✅ ${data.message}`);
+            await loadProducts();
+        } catch {
+            alert("❌ No se pudo conectar con el backend");
         }
-
-        await loadProducts();
     }
 
     function changePrice(productId, value) {

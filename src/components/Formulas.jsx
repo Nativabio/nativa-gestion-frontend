@@ -45,21 +45,59 @@ export default function Formulas() {
     const deleteFormula = async(id)=>{
 
 
-        if(!confirm("¿Eliminar fórmula?"))
+        const formula = items.find(
+            (item) => Number(item.id) === Number(id)
+        );
+
+        const confirmed = confirm(
+            `¿Eliminar definitivamente la fórmula ${
+                formula?.name || "seleccionada"
+            }?\n\n`
+            +
+            "Primero deben haberse eliminado todos sus lotes. "
+            +
+            "Los asientos contables no se modificarán."
+        );
+
+        if(!confirmed)
             return;
 
 
-        await fetch(
-            `http://127.0.0.1:8000/formulas/${id}`,
-            {
-                method:"DELETE"
+        try {
+
+            const response = await fetch(
+                `http://127.0.0.1:8000/formulas/${id}`,
+                {
+                    method:"DELETE"
+                }
+            );
+
+            const data = await response.json();
+
+            if(!response.ok || data.error) {
+
+                alert(
+                    `❌ ${
+                        data.error
+                        ||
+                        "No se pudo eliminar la fórmula"
+                    }`
+                );
+
+                return;
             }
-        );
 
+            alert(`✅ ${data.message}`);
 
-        setSelected(null);
+            setSelected(null);
+            setEditing(null);
 
-        load();
+            await load();
+
+        } catch {
+
+            alert("❌ No se pudo conectar con el backend");
+        }
 
 
     };

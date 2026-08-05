@@ -589,24 +589,50 @@ export default function Lots() {
     }
 
     async function deleteLot(lot) {
-        if (!lot.can_delete) {
-            alert(
-                lot.delete_block_reason
-                ||
-                "Este lote no puede eliminarse."
-            );
-            return;
-        }
+        const produced = Number(lot.units_produced || 0);
+        const available = Math.max(
+            Math.min(
+                Number(lot.remaining_units || 0),
+                produced
+            ),
+            0
+        );
+
+        const partialDeletion =
+            Math.abs(available - produced) > 0.000001;
 
         let message =
-            `¿Eliminar el lote ${lot.lot_number}?\n\n`
+            `¿Eliminar definitivamente el lote ${lot.lot_number}?\n\n`
             +
-            `Se descontarán ${formatNumber(lot.units_produced)} ${
+            `Se descontarán ${formatNumber(available)} ${
                 String(lot.output_type).toUpperCase()
                     === "RAW_MATERIAL"
                     ? "del stock de la materia prima elaborada"
                     : "unidades del producto terminado"
-            } y se repondrán las materias primas utilizadas.`;
+            }.`;
+
+        if (partialDeletion) {
+            message +=
+                `\n\nEl lote produjo ${formatNumber(produced)}, pero `
+                +
+                `solo conserva ${formatNumber(available)} disponibles. `
+                +
+                "Las materias primas se repondrán únicamente en esa proporción.";
+        } else {
+            message +=
+                " Se repondrán todas las materias primas utilizadas.";
+        }
+
+        message +=
+            "\n\nMODO TEMPORAL DE LIMPIEZA: aunque el lote tenga ventas, "
+            +
+            "movimientos de stock u otros lotes vinculados, se eliminará igual. "
+            +
+            "Esos registros permanecerán y solo se quitarán sus vínculos técnicos."
+            +
+            "\n\nLos asientos contables no se modificarán. "
+            +
+            "Después deberás corregirlos manualmente desde el Libro Diario.";
 
         if (lot.material_history_source === "FORMULA_ESTIMATE") {
             message +=
@@ -623,27 +649,37 @@ export default function Lots() {
             return;
         }
 
-        const response = await fetch(`${API}/lots/${lot.id}`, {
-            method: "DELETE"
-        });
+        try {
+            const response = await fetch(`${API}/lots/${lot.id}`, {
+                method: "DELETE"
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (data.error) {
-            alert(`❌ ${data.error}`);
-            return;
+            if (!response.ok || data.error) {
+                alert(
+                    `❌ ${
+                        data.error
+                        ||
+                        "No se pudo eliminar el lote"
+                    }`
+                );
+                return;
+            }
+
+            let successMessage = `✅ ${data.message}`;
+
+            if (data.warning) {
+                successMessage += `\n\n⚠️ ${data.warning}`;
+            }
+
+            alert(successMessage);
+            setExpandedLotId(null);
+            await loadLots();
+            await loadNextLotNumber();
+        } catch {
+            alert("❌ No se pudo conectar con el backend");
         }
-
-        let successMessage = `✅ ${data.message}`;
-
-        if (data.warning) {
-            successMessage += `\n\n⚠️ ${data.warning}`;
-        }
-
-        alert(successMessage);
-        setExpandedLotId(null);
-        await loadLots();
-        await loadNextLotNumber();
     }
 
     const productOptions = Array.from(
@@ -1278,12 +1314,7 @@ export default function Lots() {
 
                                                 <button
                                                     onClick={() => deleteLot(lot)}
-                                                    disabled={!lot.can_delete}
-                                                    title={
-                                                        lot.can_delete
-                                                            ? "Eliminar lote"
-                                                            : lot.delete_block_reason
-                                                    }
+                                                    title="Eliminar lote (modo temporal sin bloqueos)"
                                                     style={{ marginLeft: 6 }}
                                                 >
                                                     🗑️ Eliminar
