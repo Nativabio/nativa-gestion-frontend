@@ -119,11 +119,11 @@ export default function FormulaList({
                 <thead>
                     <tr>
                         <th>Nombre</th>
-                        <th>Resultado</th>
                         <th>Tipo</th>
                         <th>Lote</th>
                         <th>Rendimiento</th>
                         <th>Margen</th>
+                        <th>Precio sugerido</th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -135,7 +135,6 @@ export default function FormulaList({
                         return (
                             <tr key={formula.id}>
                                 <td>{formula.name}</td>
-                                <td>{output.name}</td>
                                 <td>{output.typeLabel}</td>
                                 <td>
                                     {Number(
@@ -170,6 +169,22 @@ export default function FormulaList({
                                                 maximumFractionDigits: 2
                                             }
                                         )}%`
+                                        : "—"}
+                                </td>
+                                <td>
+                                    {output.type === "PRODUCT"
+                                        ? Number(
+                                            formula.suggested_price
+                                            ?? 0
+                                        ).toLocaleString(
+                                            "es-AR",
+                                            {
+                                                style: "currency",
+                                                currency: "ARS",
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2
+                                            }
+                                        )
                                         : "—"}
                                 </td>
                                 <td>

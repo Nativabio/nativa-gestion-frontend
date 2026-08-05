@@ -6,8 +6,10 @@ export default function Lots() {
     const [view, setView] = useState("new");
 
     const [formulas, setFormulas] = useState([]);
+    const [rawMaterials, setRawMaterials] = useState([]);
     const [formulaId, setFormulaId] = useState("");
     const [items, setItems] = useState([]);
+    const [extraMaterialId, setExtraMaterialId] = useState("");
     const [batchNumber, setBatchNumber] = useState("");
     const [laborHourCost, setLaborHourCost] = useState(10000);
 
@@ -116,6 +118,20 @@ export default function Lots() {
                 materialsResponse.json()
             ]);
 
+            const materialList = Array.isArray(materialsData)
+                ? materialsData
+                : [];
+
+            setRawMaterials(
+                [...materialList].sort((a, b) =>
+                    String(a.name || "").localeCompare(
+                        String(b.name || ""),
+                        "es",
+                        { sensitivity: "base" }
+                    )
+                )
+            );
+
             const productNames = new Map(
                 (Array.isArray(productsData)
                     ? productsData
@@ -127,10 +143,7 @@ export default function Lots() {
             );
 
             const materialsById = new Map(
-                (Array.isArray(materialsData)
-                    ? materialsData
-                    : []
-                ).map((material) => [
+                materialList.map((material) => [
                     Number(material.id),
                     material
                 ])
@@ -189,6 +202,7 @@ export default function Lots() {
             );
         } catch {
             setFormulas([]);
+            setRawMaterials([]);
         }
     }
 
@@ -223,7 +237,8 @@ export default function Lots() {
         const newItems = formulaItems
             .map((item) => ({
                 ...item,
-                real_quantity: Number(item.quantity || 0)
+                real_quantity: Number(item.quantity || 0),
+                is_extra: false
             }))
             .sort((a, b) =>
                 String(a.raw_material || "").localeCompare(
@@ -234,6 +249,7 @@ export default function Lots() {
             );
 
         setItems(newItems);
+        setExtraMaterialId("");
     }
 
     function changeQuantity(index, value) {
@@ -242,10 +258,67 @@ export default function Lots() {
                 itemIndex === index
                     ? {
                         ...item,
-                        real_quantity: Number(value)
+                        real_quantity:
+                            value === ""
+                                ? ""
+                                : Number(value)
                     }
                     : item
             )
+        );
+    }
+
+    function addExtraMaterial() {
+        if (!extraMaterialId) {
+            alert("Seleccioná una materia prima extra");
+            return;
+        }
+
+        const material = rawMaterials.find(
+            (item) => Number(item.id) === Number(extraMaterialId)
+        );
+
+        if (!material) {
+            alert("No se encontró la materia prima seleccionada");
+            return;
+        }
+
+        const alreadyAdded = items.some(
+            (item) =>
+                Number(item.raw_material_id)
+                ===
+                Number(material.id)
+        );
+
+        if (alreadyAdded) {
+            alert(
+                "Esa materia prima ya está incluida en el lote. "
+                +
+                "Modificá su cantidad en la tabla."
+            );
+            return;
+        }
+
+        setItems((currentItems) => [
+            ...currentItems,
+            {
+                id: `extra-${material.id}`,
+                raw_material_id: material.id,
+                raw_material: material.name,
+                quantity: 0,
+                real_quantity: 0,
+                unit: material.unit || "",
+                unit_cost: Number(material.cost || 0),
+                is_extra: true
+            }
+        ]);
+
+        setExtraMaterialId("");
+    }
+
+    function removeExtraMaterial(index) {
+        setItems((currentItems) =>
+            currentItems.filter((_, itemIndex) => itemIndex !== index)
         );
     }
 
@@ -268,6 +341,24 @@ export default function Lots() {
                 ? ""
                 : "unid."
         );
+
+    const availableExtraMaterials = rawMaterials.filter(
+        (material) =>
+            !items.some(
+                (item) =>
+                    Number(item.raw_material_id)
+                    ===
+                    Number(material.id)
+            )
+            &&
+            !(
+                selectedOutputType === "RAW_MATERIAL"
+                &&
+                Number(selectedFormula?.output_raw_material_id)
+                ===
+                Number(material.id)
+            )
+    );
 
     const totalMaterials = items.reduce(
         (sum, item) =>
@@ -307,6 +398,28 @@ export default function Lots() {
             return;
         }
 
+        if (
+            items.some(
+                (item) => Number(item.real_quantity || 0) < 0
+            )
+        ) {
+            alert("Las cantidades usadas no pueden ser negativas");
+            return;
+        }
+
+        if (
+            !items.some(
+                (item) => Number(item.real_quantity || 0) > 0
+            )
+        ) {
+            alert(
+                "Al menos una materia prima debe tener "
+                +
+                "una cantidad mayor a cero"
+            );
+            return;
+        }
+
         if (Number(unitsProduced) <= 0) {
             alert("Ingresá las unidades producidas");
             return;
@@ -323,13 +436,13 @@ export default function Lots() {
                 production_date: date,
                 expiration_date: expirationDate || null,
                 units_produced: Number(unitsProduced),
-                real_labor_hours: Number(laborHours),
+                real_labor_hours: Number(laborHours || 0),
                 total_cost: totalCost,
                 unit_cost: unitCost,
                 notes,
                 materials: items.map((item) => ({
-                    raw_material_id: item.raw_material_id,
-                    real_quantity: Number(item.real_quantity)
+                    raw_material_id: Number(item.raw_material_id),
+                    real_quantity: Number(item.real_quantity || 0)
                 }))
             })
         });
@@ -351,6 +464,7 @@ export default function Lots() {
 
         setFormulaId("");
         setItems([]);
+        setExtraMaterialId("");
         setExpirationDate("");
         setUnitsProduced("");
         setLaborHours("");
@@ -678,6 +792,7 @@ export default function Lots() {
                         onChange={(event) => {
                             setFormulaId(event.target.value);
                             setItems([]);
+                            setExtraMaterialId("");
                         }}
                     >
                         <option value="">Seleccionar fórmula</option>
@@ -715,6 +830,7 @@ export default function Lots() {
                                 <th>Real</th>
                                 <th>Desvío</th>
                                 <th>Costo utilizado</th>
+                                <th>Acción</th>
                             </tr>
                         </thead>
 
@@ -722,7 +838,7 @@ export default function Lots() {
                             {items.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan="5"
+                                        colSpan="6"
                                         style={{
                                             textAlign: "center",
                                             padding: 20
@@ -733,14 +849,31 @@ export default function Lots() {
                                 </tr>
                             ) : (
                                 items.map((item, index) => (
-                                    <tr key={item.id}>
-                                        <td>{item.raw_material}</td>
+                                    <tr key={item.id || `${item.raw_material_id}-${index}`}>
                                         <td>
-                                            {formatNumber(item.quantity)} {item.unit}
+                                            {item.raw_material}
+                                            {item.is_extra && (
+                                                <span
+                                                    style={{
+                                                        marginLeft: 7,
+                                                        fontSize: 12,
+                                                        fontWeight: "bold"
+                                                    }}
+                                                >
+                                                    (extra)
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {item.is_extra
+                                                ? "—"
+                                                : `${formatNumber(item.quantity)} ${item.unit}`}
                                         </td>
                                         <td>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                step="any"
                                                 value={item.real_quantity}
                                                 onChange={(event) =>
                                                     changeQuantity(
@@ -752,11 +885,13 @@ export default function Lots() {
                                             />{" "}{item.unit}
                                         </td>
                                         <td>
-                                            {formatNumber(
-                                                Number(item.real_quantity)
-                                                -
-                                                Number(item.quantity)
-                                            )} {item.unit}
+                                            {item.is_extra
+                                                ? "Ingrediente agregado"
+                                                : `${formatNumber(
+                                                    Number(item.real_quantity || 0)
+                                                    -
+                                                    Number(item.quantity || 0)
+                                                )} ${item.unit}`}
                                         </td>
                                         <td>
                                             {formatMoney(
@@ -765,11 +900,92 @@ export default function Lots() {
                                                 Number(item.unit_cost || 0)
                                             )}
                                         </td>
+                                        <td>
+                                            {item.is_extra
+                                                ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            removeExtraMaterial(index)
+                                                        }
+                                                    >
+                                                        Quitar
+                                                    </button>
+                                                )
+                                                : (
+                                                    Number(item.real_quantity || 0) === 0
+                                                        ? "Omitido"
+                                                        : "—"
+                                                )}
+                                        </td>
                                     </tr>
                                 ))
                             )}
                         </tbody>
                     </table>
+
+                    <div
+                        style={{
+                            marginTop: 14,
+                            padding: 12,
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            maxWidth: 650
+                        }}
+                    >
+                        <b>Agregar ingrediente extra al lote</b>
+
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: 8,
+                                flexWrap: "wrap",
+                                marginTop: 8
+                            }}
+                        >
+                            <select
+                                value={extraMaterialId}
+                                onChange={(event) =>
+                                    setExtraMaterialId(event.target.value)
+                                }
+                            >
+                                <option value="">
+                                    Seleccionar materia prima
+                                </option>
+
+                                {availableExtraMaterials.map((material) => (
+                                    <option
+                                        key={material.id}
+                                        value={material.id}
+                                    >
+                                        {material.name}
+                                        {material.unit
+                                            ? ` (${material.unit})`
+                                            : ""}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <button
+                                type="button"
+                                onClick={addExtraMaterial}
+                            >
+                                ➕ Agregar ingrediente extra
+                            </button>
+                        </div>
+
+                        <div
+                            style={{
+                                marginTop: 7,
+                                fontSize: 12,
+                                color: "#666"
+                            }}
+                        >
+                            Podés dejar en 0 un ingrediente de la fórmula para
+                            omitirlo solo en este lote. La fórmula original no se
+                            modifica.
+                        </div>
+                    </div>
 
                     <br /><br />
 
