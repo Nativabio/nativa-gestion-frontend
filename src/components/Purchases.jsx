@@ -22,6 +22,11 @@ export default function Purchases() {
     const [resaleProducts, setResaleProducts] = useState([]);
     const [selectedInventory, setSelectedInventory] = useState("");
     const [items, setItems] = useState([]);
+    const [productionItems, setProductionItems] = useState([]);
+    const [productionItemName, setProductionItemName] = useState("");
+    const [productionItemCategory, setProductionItemCategory] = useState(
+        "Herramientas y utensilios"
+    );
 
     useEffect(() => {
         loadInventoryOptions();
@@ -153,6 +158,51 @@ export default function Purchases() {
         );
     }
 
+    function addProductionItem() {
+        const cleanName = productionItemName.trim();
+
+        if (!cleanName) {
+            alert("Ingresá el nombre del material o herramienta");
+            return;
+        }
+
+        setProductionItems((current) => [
+            ...current,
+            {
+                key: `PRODUCTION:${Date.now()}:${current.length}`,
+                name: cleanName,
+                category:
+                    productionItemCategory || "Herramientas y utensilios",
+                quantity: 1,
+                cost: 0
+            }
+        ]);
+
+        setProductionItemName("");
+    }
+
+    function updateProductionItem(index, field, value) {
+        setProductionItems((currentItems) =>
+            currentItems.map((item, itemIndex) =>
+                itemIndex === index
+                    ? {
+                        ...item,
+                        [field]:
+                            field === "quantity" || field === "cost"
+                                ? Number(value)
+                                : value
+                    }
+                    : item
+            )
+        );
+    }
+
+    function removeProductionItem(index) {
+        setProductionItems((currentItems) =>
+            currentItems.filter((_, itemIndex) => itemIndex !== index)
+        );
+    }
+
     const inventorySubtotal = useMemo(
         () =>
             items.reduce(
@@ -160,6 +210,15 @@ export default function Purchases() {
                 0
             ),
         [items]
+    );
+
+    const productionSubtotal = useMemo(
+        () =>
+            productionItems.reduce(
+                (sum, item) => sum + Number(item.cost || 0),
+                0
+            ),
+        [productionItems]
     );
 
     const shipping = Math.max(Number(shippingCost || 0), 0);
@@ -174,7 +233,8 @@ export default function Purchases() {
         );
     }
 
-    const purchaseTotal = inventorySubtotal + shipping;
+    const purchaseTotal =
+        inventorySubtotal + productionSubtotal + shipping;
 
     function formatMoney(value) {
         return Number(value || 0).toLocaleString("es-AR", {
@@ -195,6 +255,9 @@ export default function Purchases() {
         setDate(today);
         setEditingPurchase(null);
         setSelectedInventory("");
+        setProductionItems([]);
+        setProductionItemName("");
+        setProductionItemCategory("Herramientas y utensilios");
         loadNextPurchaseNumber();
     }
 
@@ -270,6 +333,20 @@ export default function Purchases() {
             })
         );
 
+        setProductionItems(
+            (purchase.extra_items || []).map((item, index) => ({
+                key: `PRODUCTION:${purchase.id}:${index}`,
+                name: item.name || "Material de producción",
+                category:
+                    item.category || "Herramientas y utensilios",
+                quantity: Number(item.quantity || 0),
+                cost: Number(item.price || 0)
+            }))
+        );
+
+        setProductionItemName("");
+        setProductionItemCategory("Herramientas y utensilios");
+
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
@@ -279,8 +356,11 @@ export default function Purchases() {
             return;
         }
 
-        if (items.length === 0) {
-            alert("Agregá al menos una materia prima o producto de reventa");
+        if (items.length === 0 && productionItems.length === 0) {
+            alert(
+                "Agregá al menos una materia prima, producto de reventa "
+                + "o material de producción"
+            );
             return;
         }
 
@@ -292,6 +372,21 @@ export default function Purchases() {
 
         if (invalidItem) {
             alert("Revisá las cantidades y los precios de la compra");
+            return;
+        }
+
+        const invalidProductionItem = productionItems.find(
+            (item) =>
+                !String(item.name || "").trim()
+                || Number(item.quantity || 0) <= 0
+                || Number(item.cost || 0) < 0
+        );
+
+        if (invalidProductionItem) {
+            alert(
+                "Revisá los nombres, cantidades y precios de los "
+                + "materiales de producción"
+            );
             return;
         }
 
@@ -309,7 +404,14 @@ export default function Purchases() {
                 quantity: Number(item.quantity || 0),
                 price: Number(item.cost || 0)
             })),
-            extra_items: editingPurchase?.extra_items || []
+            extra_items: productionItems.map((item) => ({
+                name: String(item.name || "").trim(),
+                category:
+                    String(item.category || "").trim()
+                    || "Herramientas y utensilios",
+                quantity: Number(item.quantity || 0),
+                price: Number(item.cost || 0)
+            }))
         };
 
         setSaving(true);
@@ -520,8 +622,9 @@ export default function Purchases() {
 
                 <div style={styles.infoBox}>
                     Las materias primas aumentan el stock de insumos. Los
-                    productos de reventa aumentan el stock de mercadería y no
-                    requieren fórmula ni lote de producción.
+                    productos de reventa aumentan el stock de mercadería. Los
+                    materiales y herramientas de producción se registran como
+                    gasto y no modifican ningún stock.
                 </div>
 
                 <div style={styles.addRow}>
@@ -666,9 +769,166 @@ export default function Purchases() {
                     })}
                 </div>
 
+                <hr style={styles.separator} />
+
+                <div style={styles.productionHeader}>
+                    <div>
+                        <h4 style={styles.productionTitle}>
+                            🧰 Materiales y herramientas de producción
+                        </h4>
+                        <div style={styles.helpText}>
+                            Ejemplos: jarra medidora, espátula, molde, guantes
+                            o elementos de limpieza. Se contabilizan como gasto
+                            y no generan stock.
+                        </div>
+                    </div>
+                </div>
+
+                <div style={styles.productionAddRow}>
+                    <input
+                        value={productionItemName}
+                        onChange={(event) =>
+                            setProductionItemName(event.target.value)
+                        }
+                        placeholder="Nombre del material o herramienta"
+                        style={{ ...styles.input, marginTop: 0 }}
+                    />
+
+                    <select
+                        value={productionItemCategory}
+                        onChange={(event) =>
+                            setProductionItemCategory(event.target.value)
+                        }
+                        style={{ ...styles.input, marginTop: 0 }}
+                    >
+                        <option value="Herramientas y utensilios">
+                            Herramientas y utensilios
+                        </option>
+                        <option value="Moldes y elementos de producción">
+                            Moldes y elementos de producción
+                        </option>
+                        <option value="Limpieza y seguridad">
+                            Limpieza y seguridad
+                        </option>
+                        <option value="Otro material de producción">
+                            Otro material de producción
+                        </option>
+                    </select>
+
+                    <button
+                        onClick={addProductionItem}
+                        style={styles.addButton}
+                    >
+                        ➕ Agregar material
+                    </button>
+                </div>
+
+                <div style={styles.productionScroller}>
+                    <div style={styles.productionItemsHeader}>
+                        <div>Material o herramienta</div>
+                        <div>Categoría</div>
+                        <div>Cantidad</div>
+                        <div>Precio comprado</div>
+                        <div></div>
+                    </div>
+
+                    {productionItems.length === 0 && (
+                        <p style={styles.emptyText}>
+                            No hay materiales de producción agregados.
+                        </p>
+                    )}
+
+                    {productionItems.map((item, index) => (
+                        <div
+                            key={item.key}
+                            style={styles.productionItemRow}
+                        >
+                            <input
+                                value={item.name}
+                                onChange={(event) =>
+                                    updateProductionItem(
+                                        index,
+                                        "name",
+                                        event.target.value
+                                    )
+                                }
+                                style={styles.compactInput}
+                            />
+
+                            <select
+                                value={item.category}
+                                onChange={(event) =>
+                                    updateProductionItem(
+                                        index,
+                                        "category",
+                                        event.target.value
+                                    )
+                                }
+                                style={styles.compactInput}
+                            >
+                                <option value="Herramientas y utensilios">
+                                    Herramientas y utensilios
+                                </option>
+                                <option value="Moldes y elementos de producción">
+                                    Moldes y elementos de producción
+                                </option>
+                                <option value="Limpieza y seguridad">
+                                    Limpieza y seguridad
+                                </option>
+                                <option value="Otro material de producción">
+                                    Otro material de producción
+                                </option>
+                            </select>
+
+                            <input
+                                type="number"
+                                min="0.0001"
+                                step="any"
+                                value={item.quantity}
+                                onChange={(event) =>
+                                    updateProductionItem(
+                                        index,
+                                        "quantity",
+                                        event.target.value
+                                    )
+                                }
+                                style={styles.compactInput}
+                            />
+
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.cost}
+                                onChange={(event) =>
+                                    updateProductionItem(
+                                        index,
+                                        "cost",
+                                        event.target.value
+                                    )
+                                }
+                                style={styles.compactInput}
+                            />
+
+                            <button
+                                onClick={() => removeProductionItem(index)}
+                                style={styles.removeButton}
+                                title="Quitar material de producción"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    ))}
+                </div>
+
                 <div style={styles.summary}>
                     <div>
-                        Artículos: <strong>{formatMoney(inventorySubtotal)}</strong>
+                        Stock comprado:{" "}
+                        <strong>{formatMoney(inventorySubtotal)}</strong>
+                    </div>
+                    <div>
+                        Materiales de producción:{" "}
+                        <strong>{formatMoney(productionSubtotal)}</strong>
                     </div>
                     <div>
                         Envío: <strong>{formatMoney(shipping)}</strong>
@@ -841,6 +1101,51 @@ const styles = {
     emptyText: {
         margin: "14px 0",
         color: "#666"
+    },
+    productionHeader: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 12,
+        marginBottom: 12
+    },
+    productionTitle: {
+        margin: 0,
+        fontSize: 16
+    },
+    productionAddRow: {
+        display: "grid",
+        gridTemplateColumns: "minmax(220px, 2fr) minmax(210px, 1fr) auto",
+        gap: 8,
+        alignItems: "center",
+        marginBottom: 14
+    },
+    productionScroller: {
+        width: "100%",
+        overflowX: "auto"
+    },
+    productionItemsHeader: {
+        display: "grid",
+        gridTemplateColumns:
+            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 38px",
+        gap: 8,
+        alignItems: "center",
+        padding: "7px 9px",
+        borderBottom: "2px solid #ddd",
+        fontSize: 12,
+        fontWeight: "bold",
+        background: "#f7f7f7",
+        minWidth: 780
+    },
+    productionItemRow: {
+        display: "grid",
+        gridTemplateColumns:
+            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 38px",
+        gap: 8,
+        alignItems: "center",
+        padding: "7px 9px",
+        borderBottom: "1px solid #eee",
+        minWidth: 780
     },
     summary: {
         display: "flex",

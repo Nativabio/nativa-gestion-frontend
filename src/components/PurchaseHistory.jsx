@@ -38,7 +38,8 @@ export default function PurchaseHistory({ onEdit, onChanged }) {
         const confirmed = window.confirm(
             "¿Eliminar esta compra?\n\n" +
             "Se descontarán las materias primas y los productos de reventa " +
-            "incorporados, y se eliminará el asiento contable automático."
+            "incorporados. Los materiales de producción no modifican stock. " +
+            "También se eliminará el asiento contable automático."
         );
 
         if (!confirmed) return;
@@ -110,7 +111,7 @@ export default function PurchaseHistory({ onEdit, onChanged }) {
             return (
                 `${item.name} ` +
                 `(${formatNumber(item.quantity)})` +
-                category
+                `${category} · Material de producción`
             );
         });
 

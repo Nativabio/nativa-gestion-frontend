@@ -2,11 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
+const PRODUCT_TYPES = {
+    MANUFACTURED: "Elaboración propia",
+    RESALE: "Reventa"
+};
+
 export default function Products() {
     const [products, setProducts] = useState([]);
     const [name, setName] = useState("");
     const [price, setPrice] = useState("");
     const [stock, setStock] = useState("");
+    const [productType, setProductType] = useState("MANUFACTURED");
+    const [unitCost, setUnitCost] = useState("");
+    const [marginPercent, setMarginPercent] = useState("40");
 
     useEffect(() => {
         loadProducts();
@@ -22,9 +30,21 @@ export default function Products() {
         }
     }
 
+    const newSuggestedPrice = useMemo(
+        () => calculateSuggestedPrice(unitCost, marginPercent),
+        [unitCost, marginPercent]
+    );
+
     async function createProduct() {
         if (!name.trim()) {
             alert("Ingresá el nombre del producto");
+            return;
+        }
+
+        const margin = Number(marginPercent || 0);
+
+        if (margin < 0 || margin >= 100) {
+            alert("El margen debe ser mayor o igual a 0 y menor a 100");
             return;
         }
 
@@ -36,7 +56,13 @@ export default function Products() {
             body: JSON.stringify({
                 name: name.trim(),
                 price: Number(price || 0),
-                stock: Number(stock || 0)
+                stock: Number(stock || 0),
+                product_type: productType,
+                unit_cost:
+                    productType === "RESALE"
+                        ? Number(unitCost || 0)
+                        : 0,
+                margin_percent: margin
             })
         });
 
@@ -50,28 +76,32 @@ export default function Products() {
         setName("");
         setPrice("");
         setStock("");
+        setProductType("MANUFACTURED");
+        setUnitCost("");
+        setMarginPercent("40");
         await loadProducts();
     }
 
-    async function updatePrice(id, productPrice) {
-        const response = await fetch(`${API}/products/${id}`, {
+    async function updateProduct(product) {
+        const response = await fetch(`${API}/products/${product.id}`, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                price: Number(productPrice || 0)
+                price: Number(product.price || 0),
+                margin_percent: Number(product.margin_percent || 0)
             })
         });
 
         const data = await response.json();
 
         if (!response.ok || data.error) {
-            alert(data.error || "No se pudo guardar el precio");
+            alert(data.error || "No se pudo guardar el producto");
             return;
         }
 
-        alert("Precio guardado");
+        alert("Producto guardado");
         await loadProducts();
     }
 
@@ -88,53 +118,57 @@ export default function Products() {
             "producto. Los asientos contables no se modificarán."
         );
 
-        if (!confirmed) {
-            return;
-        }
+        if (!confirmed) return;
 
         try {
             const response = await fetch(
                 `${API}/products/${product.id}`,
-                {
-                    method: "DELETE"
-                }
+                { method: "DELETE" }
             );
-
             const data = await response.json();
 
             if (!response.ok || data.error) {
-                alert(
-                    `❌ ${
-                        data.error
-                        ||
-                        "No se pudo eliminar el producto"
-                    }`
-                );
+                alert(data.error || "No se pudo eliminar el producto");
                 return;
             }
 
-            let successMessage = `✅ ${data.message}`;
+            let message = `✅ ${data.message}`;
 
             if (data.warning) {
-                successMessage += `\n\n⚠️ ${data.warning}`;
+                message += `\n\n⚠️ ${data.warning}`;
             }
 
-            alert(successMessage);
+            alert(message);
             await loadProducts();
         } catch {
             alert("❌ No se pudo conectar con el backend");
         }
     }
 
-    function changePrice(productId, value) {
+    function changeProduct(productId, field, value) {
         setProducts((current) =>
             current.map((product) =>
                 product.id === productId
                     ? {
                         ...product,
-                        price: Number(value)
+                        [field]: Number(value)
                     }
                     : product
+            )
+        );
+    }
+
+    function useSuggestedPrice(product) {
+        const suggested = calculateSuggestedPrice(
+            product.unit_cost,
+            product.margin_percent
+        );
+
+        setProducts((current) =>
+            current.map((item) =>
+                item.id === product.id
+                    ? { ...item, price: suggested }
+                    : item
             )
         );
     }
@@ -163,35 +197,132 @@ export default function Products() {
 
     return (
         <div>
-            <h2>📦 Productos Terminados</h2>
+            <h2>📦 Productos</h2>
 
             <div style={styles.newProductCard}>
                 <h3>➕ Nuevo Producto</h3>
 
-                <input
-                    placeholder="Nombre producto"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    style={styles.newInput}
-                />
+                <div style={styles.formGrid}>
+                    <div>
+                        <label>Nombre</label>
+                        <input
+                            placeholder="Nombre del producto"
+                            value={name}
+                            onChange={(event) => setName(event.target.value)}
+                            style={styles.input}
+                        />
+                    </div>
 
-                <input
-                    type="number"
-                    placeholder="Precio"
-                    value={price}
-                    onChange={(event) => setPrice(event.target.value)}
-                    style={styles.newInput}
-                />
+                    <div>
+                        <label>Tipo</label>
+                        <select
+                            value={productType}
+                            onChange={(event) =>
+                                setProductType(event.target.value)
+                            }
+                            style={styles.input}
+                        >
+                            <option value="MANUFACTURED">
+                                Elaboración propia
+                            </option>
+                            <option value="RESALE">
+                                Producto de reventa
+                            </option>
+                        </select>
+                    </div>
 
-                <input
-                    type="number"
-                    placeholder="Stock inicial"
-                    value={stock}
-                    onChange={(event) => setStock(event.target.value)}
-                    style={styles.newInput}
-                />
+                    <div>
+                        <label>Precio de venta</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Precio"
+                            value={price}
+                            onChange={(event) => setPrice(event.target.value)}
+                            style={styles.input}
+                        />
+                    </div>
 
-                <button onClick={createProduct}>💾 Crear</button>
+                    <div>
+                        <label>Stock inicial</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="Stock"
+                            value={stock}
+                            onChange={(event) => setStock(event.target.value)}
+                            style={styles.input}
+                        />
+                    </div>
+
+                    {productType === "RESALE" && (
+                        <>
+                            <div>
+                                <label>Costo unitario inicial</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={unitCost}
+                                    onChange={(event) =>
+                                        setUnitCost(event.target.value)
+                                    }
+                                    style={styles.input}
+                                />
+                                <div style={styles.helpText}>
+                                    Luego se actualizará desde Compras.
+                                </div>
+                            </div>
+
+                            <div>
+                                <label>Margen deseado (%)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="99.99"
+                                    step="0.01"
+                                    value={marginPercent}
+                                    onChange={(event) =>
+                                        setMarginPercent(event.target.value)
+                                    }
+                                    style={styles.input}
+                                />
+                            </div>
+
+                            <div style={styles.suggestedCard}>
+                                <span>Precio sugerido</span>
+                                <strong>
+                                    {formatMoney(newSuggestedPrice)}
+                                </strong>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setPrice(
+                                            newSuggestedPrice
+                                                ? String(newSuggestedPrice)
+                                                : ""
+                                        )
+                                    }
+                                    disabled={newSuggestedPrice <= 0}
+                                >
+                                    Usar sugerido
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <button onClick={createProduct} style={styles.createButton}>
+                    💾 Crear
+                </button>
+            </div>
+
+            <div style={styles.infoBox}>
+                Los productos de reventa no usan fórmula ni lote de producción.
+                El stock y el costo promedio se actualizan al registrarlos en
+                Compras.
             </div>
 
             <div style={styles.summaryGrid}>
@@ -211,32 +342,105 @@ export default function Products() {
                     <thead>
                         <tr>
                             <th style={styles.th}>Producto</th>
+                            <th style={styles.th}>Tipo</th>
                             <th style={styles.thRight}>Stock</th>
+                            <th style={styles.thRight}>Costo unitario</th>
                             <th style={styles.thRight}>Valor al costo</th>
+                            <th style={styles.th}>Margen</th>
+                            <th style={styles.thRight}>Precio sugerido</th>
                             <th style={styles.th}>Precio de venta</th>
-                            <th style={styles.thRight}>
-                                Valor total de venta
-                            </th>
+                            <th style={styles.thRight}>Valor venta</th>
                             <th style={styles.thCenter}>Acción</th>
                         </tr>
                     </thead>
 
                     <tbody>
                         {products.map((product) => {
+                            const isResale =
+                                product.product_type === "RESALE";
                             const saleValue =
                                 Number(product.stock || 0)
                                 * Number(product.price || 0);
+                            const suggested = isResale
+                                ? calculateSuggestedPrice(
+                                    product.unit_cost,
+                                    product.margin_percent
+                                )
+                                : 0;
 
                             return (
                                 <tr key={product.id}>
                                     <td style={styles.tdStrong}>
                                         {product.name}
                                     </td>
+                                    <td style={styles.td}>
+                                        <span
+                                            style={
+                                                isResale
+                                                    ? styles.resaleBadge
+                                                    : styles.manufacturedBadge
+                                            }
+                                        >
+                                            {PRODUCT_TYPES[
+                                                product.product_type
+                                            ] || "Elaboración propia"}
+                                        </span>
+                                    </td>
                                     <td style={styles.tdRight}>
                                         {formatNumber(product.stock)}
                                     </td>
                                     <td style={styles.tdRight}>
+                                        {formatMoney(product.unit_cost)}
+                                    </td>
+                                    <td style={styles.tdRight}>
                                         {formatMoney(product.inventory_value)}
+                                    </td>
+                                    <td style={styles.td}>
+                                        {isResale ? (
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="99.99"
+                                                step="0.01"
+                                                value={product.margin_percent}
+                                                onChange={(event) =>
+                                                    changeProduct(
+                                                        product.id,
+                                                        "margin_percent",
+                                                        event.target.value
+                                                    )
+                                                }
+                                                style={{ width: 85 }}
+                                            />
+                                        ) : (
+                                            <span style={styles.mutedText}>
+                                                En fórmula
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td style={styles.tdRight}>
+                                        {isResale ? (
+                                            <>
+                                                <strong>
+                                                    {formatMoney(suggested)}
+                                                </strong>
+                                                <div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            useSuggestedPrice(
+                                                                product
+                                                            )
+                                                        }
+                                                        style={styles.smallButton}
+                                                    >
+                                                        Usar
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <span style={styles.mutedText}>—</span>
+                                        )}
                                     </td>
                                     <td style={styles.td}>
                                         <input
@@ -245,16 +449,14 @@ export default function Products() {
                                             step="0.01"
                                             value={product.price}
                                             onChange={(event) =>
-                                                changePrice(
+                                                changeProduct(
                                                     product.id,
+                                                    "price",
                                                     event.target.value
                                                 )
                                             }
-                                            style={{ width: 135 }}
+                                            style={{ width: 125 }}
                                         />
-                                        <div style={styles.priceTotalHint}>
-                                            Total: {formatMoney(saleValue)}
-                                        </div>
                                     </td>
                                     <td style={styles.tdRightStrong}>
                                         {formatMoney(saleValue)}
@@ -262,10 +464,7 @@ export default function Products() {
                                     <td style={styles.tdCenter}>
                                         <button
                                             onClick={() =>
-                                                updatePrice(
-                                                    product.id,
-                                                    product.price
-                                                )
+                                                updateProduct(product)
                                             }
                                         >
                                             💾 Guardar
@@ -287,13 +486,13 @@ export default function Products() {
 
                     <tfoot>
                         <tr style={styles.footerRow}>
-                            <td colSpan="2" style={styles.footerLabel}>
+                            <td colSpan="4" style={styles.footerLabel}>
                                 Totales del stock
                             </td>
                             <td style={styles.tdRightStrong}>
                                 {formatMoney(totalInventoryCost)}
                             </td>
-                            <td></td>
+                            <td colSpan="3"></td>
                             <td style={styles.tdRightStrong}>
                                 {formatMoney(totalSaleValue)}
                             </td>
@@ -304,11 +503,24 @@ export default function Products() {
             </div>
 
             <p style={styles.note}>
-                El valor al costo se toma de los lotes que respaldan el stock.
-                El valor de venta se calcula con el precio vigente de cada producto.
+                En elaboración propia, el costo se toma de los lotes. En
+                reventa, se toma del costo promedio vigente de las compras.
             </p>
         </div>
     );
+}
+
+function calculateSuggestedPrice(cost, marginPercent) {
+    const normalizedCost = Math.max(Number(cost || 0), 0);
+    const margin = Number(marginPercent || 0);
+
+    if (margin < 0 || margin >= 100) return 0;
+
+    const denominator = 1 - margin / 100;
+
+    if (denominator <= 0) return 0;
+
+    return Number((normalizedCost / denominator).toFixed(2));
 }
 
 function formatMoney(value) {
@@ -333,10 +545,46 @@ const styles = {
         padding: 20,
         borderRadius: 10
     },
-    newInput: {
-        marginRight: 10,
-        marginBottom: 8,
-        padding: 8
+    formGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+        gap: 12,
+        alignItems: "start"
+    },
+    input: {
+        display: "block",
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "8px 9px",
+        marginTop: 4
+    },
+    helpText: {
+        fontSize: 11,
+        color: "#666",
+        marginTop: 4
+    },
+    suggestedCard: {
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        padding: 10,
+        background: "white",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6
+    },
+    createButton: {
+        marginTop: 15,
+        padding: "8px 15px",
+        cursor: "pointer"
+    },
+    infoBox: {
+        marginTop: 14,
+        padding: 12,
+        border: "1px solid #d7dfd3",
+        borderRadius: 8,
+        background: "#f8fbf6",
+        color: "#44513f",
+        fontSize: 13
     },
     summaryGrid: {
         display: "grid",
@@ -355,7 +603,7 @@ const styles = {
     },
     table: {
         width: "100%",
-        minWidth: 980,
+        minWidth: 1480,
         borderCollapse: "collapse"
     },
     th: {
@@ -402,10 +650,33 @@ const styles = {
         textAlign: "center",
         whiteSpace: "nowrap"
     },
-    priceTotalHint: {
-        marginTop: 5,
+    resaleBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 10,
+        background: "#fff3cd",
+        color: "#6a5200",
         fontSize: 12,
-        color: "#666"
+        whiteSpace: "nowrap"
+    },
+    manufacturedBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 10,
+        background: "#e8f1e5",
+        color: "#34522d",
+        fontSize: 12,
+        whiteSpace: "nowrap"
+    },
+    smallButton: {
+        marginTop: 4,
+        padding: "3px 8px",
+        fontSize: 11,
+        cursor: "pointer"
+    },
+    mutedText: {
+        color: "#777",
+        fontSize: 12
     },
     footerRow: {
         borderTop: "2px solid #777",
