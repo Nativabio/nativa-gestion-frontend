@@ -222,14 +222,15 @@ export default function Purchases() {
     );
 
     const shipping = Math.max(Number(shippingCost || 0), 0);
+    const shippingBase = inventorySubtotal + productionSubtotal;
 
     function shippingShare(item) {
-        if (shipping <= 0 || inventorySubtotal <= 0) return 0;
+        if (shipping <= 0 || shippingBase <= 0) return 0;
 
         return (
             shipping
             * Number(item.cost || 0)
-            / inventorySubtotal
+            / shippingBase
         );
     }
 
@@ -841,6 +842,8 @@ export default function Purchases() {
                         <div>Categoría</div>
                         <div>Cantidad</div>
                         <div>Precio comprado</div>
+                        <div>Envío asignado</div>
+                        <div>Costo final</div>
                         <div></div>
                     </div>
 
@@ -850,8 +853,13 @@ export default function Purchases() {
                         </p>
                     )}
 
-                    {productionItems.map((item, index) => (
-                        <div
+                    {productionItems.map((item, index) => {
+                        const allocatedShipping = shippingShare(item);
+                        const finalCost =
+                            Number(item.cost || 0) + allocatedShipping;
+
+                        return (
+                            <div
                             key={item.key}
                             style={styles.productionItemRow}
                         >
@@ -922,6 +930,14 @@ export default function Purchases() {
                                 style={styles.compactInput}
                             />
 
+                            <div style={styles.moneyCell}>
+                                {formatMoney(allocatedShipping)}
+                            </div>
+
+                            <div style={styles.totalCell}>
+                                {formatMoney(finalCost)}
+                            </div>
+
                             <button
                                 onClick={() => removeProductionItem(index)}
                                 style={styles.removeButton}
@@ -929,8 +945,9 @@ export default function Purchases() {
                             >
                                 ✕
                             </button>
-                        </div>
-                    ))}
+                            </div>
+                        );
+                    })}
                 </div>
 
                 <div style={styles.summary}>
@@ -1139,7 +1156,7 @@ const styles = {
     productionItemsHeader: {
         display: "grid",
         gridTemplateColumns:
-            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 38px",
+            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 130px 130px 38px",
         gap: 8,
         alignItems: "center",
         padding: "7px 9px",
@@ -1147,17 +1164,17 @@ const styles = {
         fontSize: 12,
         fontWeight: "bold",
         background: "#f7f7f7",
-        minWidth: 780
+        minWidth: 1040
     },
     productionItemRow: {
         display: "grid",
         gridTemplateColumns:
-            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 38px",
+            "minmax(220px, 2fr) minmax(210px, 1.5fr) 100px 140px 130px 130px 38px",
         gap: 8,
         alignItems: "center",
         padding: "7px 9px",
         borderBottom: "1px solid #eee",
-        minWidth: 780
+        minWidth: 1040
     },
     summary: {
         display: "flex",
