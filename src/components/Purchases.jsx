@@ -268,7 +268,19 @@ export default function Purchases() {
             0
         );
         const savedShipping = Number(purchase.shipping_cost || 0);
-        const baseTotal = Math.max(totalStoredPrice - savedShipping, 0);
+        const savedExtraBase = (purchase.extra_items || []).reduce(
+            (sum, item) =>
+                sum + Number(item.base_price ?? item.price ?? 0),
+            0
+        );
+        const fullBaseTotal = Math.max(
+            Number(purchase.total || 0) - savedShipping,
+            0
+        );
+        const inventoryBaseTotal = Math.max(
+            fullBaseTotal - savedExtraBase,
+            0
+        );
 
         setEditingPurchase(purchase);
         setPurchaseNumber(purchase.number || "");
@@ -303,7 +315,7 @@ export default function Purchases() {
                 if (savedShipping > 0 && totalStoredPrice > 0) {
                     basePrice =
                         Number(purchaseItem.price || 0)
-                        * baseTotal
+                        * inventoryBaseTotal
                         / totalStoredPrice;
                 }
 
