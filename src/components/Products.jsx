@@ -9,6 +9,7 @@ const PRODUCT_TYPES = {
 
 export default function Products() {
     const [products, setProducts] = useState([]);
+    const [formulas, setFormulas] = useState([]);
     const [name, setName] = useState("");
     const [price, setPrice] = useState("");
     const [stock, setStock] = useState("");
@@ -22,13 +23,43 @@ export default function Products() {
 
     async function loadProducts() {
         try {
-            const response = await fetch(`${API}/products`);
-            const data = await response.json();
-            setProducts(Array.isArray(data) ? data : []);
+            const [productsResponse, formulasResponse] = await Promise.all([
+                fetch(`${API}/products`),
+                fetch(`${API}/formulas`)
+            ]);
+
+            const [productsData, formulasData] = await Promise.all([
+                productsResponse.json(),
+                formulasResponse.json()
+            ]);
+
+            setProducts(
+                Array.isArray(productsData) ? productsData : []
+            );
+            setFormulas(
+                Array.isArray(formulasData) ? formulasData : []
+            );
         } catch {
             setProducts([]);
+            setFormulas([]);
         }
     }
+
+    const suggestedPriceByProduct = useMemo(() => {
+        const result = {};
+
+        formulas.forEach((formula) => {
+            const productId = Number(formula.output_product_id || 0);
+
+            if (productId <= 0) return;
+
+            result[productId] = Number(
+                formula.suggested_price || 0
+            );
+        });
+
+        return result;
+    }, [formulas]);
 
     const newSuggestedPrice = useMemo(
         () => calculateSuggestedPrice(unitCost, marginPercent),
@@ -345,11 +376,8 @@ export default function Products() {
                             <th style={styles.th}>Tipo</th>
                             <th style={styles.thRight}>Stock</th>
                             <th style={styles.thRight}>Costo unitario</th>
-                            <th style={styles.thRight}>Valor al costo</th>
-                            <th style={styles.th}>Margen</th>
                             <th style={styles.thRight}>Precio sugerido</th>
                             <th style={styles.th}>Precio de venta</th>
-                            <th style={styles.thRight}>Valor venta</th>
                             <th style={styles.thCenter}>Acción</th>
                         </tr>
                     </thead>
@@ -358,15 +386,14 @@ export default function Products() {
                         {products.map((product) => {
                             const isResale =
                                 product.product_type === "RESALE";
-                            const saleValue =
-                                Number(product.stock || 0)
-                                * Number(product.price || 0);
                             const suggested = isResale
                                 ? calculateSuggestedPrice(
                                     product.unit_cost,
                                     product.margin_percent
                                 )
-                                : 0;
+                                : Number(
+                                    suggestedPriceByProduct[product.id] || 0
+                                );
 
                             return (
                                 <tr key={product.id}>
@@ -393,32 +420,6 @@ export default function Products() {
                                         {formatMoney(product.unit_cost)}
                                     </td>
                                     <td style={styles.tdRight}>
-                                        {formatMoney(product.inventory_value)}
-                                    </td>
-                                    <td style={styles.td}>
-                                        {isResale ? (
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="99.99"
-                                                step="0.01"
-                                                value={product.margin_percent}
-                                                onChange={(event) =>
-                                                    changeProduct(
-                                                        product.id,
-                                                        "margin_percent",
-                                                        event.target.value
-                                                    )
-                                                }
-                                                style={{ width: 85 }}
-                                            />
-                                        ) : (
-                                            <span style={styles.mutedText}>
-                                                En fórmula
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td style={styles.tdRight}>
                                         {isResale ? (
                                             <>
                                                 <strong>
@@ -439,7 +440,9 @@ export default function Products() {
                                                 </div>
                                             </>
                                         ) : (
-                                            <span style={styles.mutedText}>—</span>
+                                            <strong>
+                                                {formatMoney(suggested)}
+                                            </strong>
                                         )}
                                     </td>
                                     <td style={styles.td}>
@@ -457,9 +460,6 @@ export default function Products() {
                                             }
                                             style={{ width: 125 }}
                                         />
-                                    </td>
-                                    <td style={styles.tdRightStrong}>
-                                        {formatMoney(saleValue)}
                                     </td>
                                     <td style={styles.tdCenter}>
                                         <button
@@ -484,21 +484,6 @@ export default function Products() {
                         })}
                     </tbody>
 
-                    <tfoot>
-                        <tr style={styles.footerRow}>
-                            <td colSpan="4" style={styles.footerLabel}>
-                                Totales del stock
-                            </td>
-                            <td style={styles.tdRightStrong}>
-                                {formatMoney(totalInventoryCost)}
-                            </td>
-                            <td colSpan="3"></td>
-                            <td style={styles.tdRightStrong}>
-                                {formatMoney(totalSaleValue)}
-                            </td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
                 </table>
             </div>
 
