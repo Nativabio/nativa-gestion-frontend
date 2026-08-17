@@ -1367,41 +1367,44 @@ export default function Sales() {
                             style={styles.historyMovement}
                         >
                             <div style={styles.historyMovementContent}>
-                                <div>
+                                <div style={styles.historyMovementLine}>
                                     <b>
                                         {actionName} {movement.number}
                                         {" — "}
                                         {movement.reason_label}
                                     </b>
 
-                                    <div>Fecha: {movement.date}</div>
+                                    <span>
+                                        Fecha: {movement.date}
+                                    </span>
 
-                                    <div>
-                                        Costo contabilizado:{" "}
+                                    <span>
+                                        Costo:{" "}
                                         {formatMoney(
                                             movement.total_cost
                                         )}
-                                    </div>
+                                    </span>
 
-                                    {movement.notes && (
-                                        <div>
-                                            Observación: {movement.notes}
-                                        </div>
+                                    {(movement.items || []).map(
+                                        (item) => (
+                                            <span
+                                                key={item.id}
+                                                style={styles.historyItem}
+                                            >
+                                                {item.name}:{" "}
+                                                {Number(
+                                                    item.quantity || 0
+                                                )}{" "}
+                                                unidad/es
+                                            </span>
+                                        )
                                     )}
 
-                                    <ul>
-                                        {(movement.items || []).map(
-                                            (item) => (
-                                                <li key={item.id}>
-                                                    {item.name}:{" "}
-                                                    {Number(
-                                                        item.quantity || 0
-                                                    )}{" "}
-                                                    unidad/es
-                                                </li>
-                                            )
-                                        )}
-                                    </ul>
+                                    {movement.notes && (
+                                        <span>
+                                            Obs.: {movement.notes}
+                                        </span>
+                                    )}
                                 </div>
 
                                 <button
@@ -1409,6 +1412,7 @@ export default function Sales() {
                                     onClick={() =>
                                         deleteStockMovement(movement)
                                     }
+                                    style={styles.historyDeleteButton}
                                 >
                                     🗑️ Eliminar
                                 </button>
@@ -1515,13 +1519,27 @@ const styles = {
     },
     historyMovement: {
         borderBottom: "1px solid #ddd",
-        padding: "12px 0"
+        padding: "8px 0"
     },
     historyMovementContent: {
         display: "flex",
         justifyContent: "space-between",
-        gap: 20,
-        alignItems: "start",
-        flexWrap: "wrap"
+        gap: 12,
+        alignItems: "center"
+    },
+    historyMovementLine: {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px 14px",
+        flexWrap: "wrap",
+        flex: 1,
+        minWidth: 0,
+        lineHeight: 1.35
+    },
+    historyItem: {
+        whiteSpace: "nowrap"
+    },
+    historyDeleteButton: {
+        flexShrink: 0
     }
 };
