@@ -46,6 +46,8 @@ export default function Accounting() {
 
     const [editingEntry, setEditingEntry] = useState(null);
 
+    const [entryNumberSearch, setEntryNumberSearch] = useState("");
+
 
     const [ledgerAccountId, setLedgerAccountId] = useState("");
 
@@ -555,6 +557,7 @@ export default function Accounting() {
                         concept: movement.concept,
                         origin: movement.origin || "MANUAL",
                         origin_id: movement.origin_id,
+                        entry_number: movement.entry_number,
                         first_id: movement.id,
                         lines: []
                     }
@@ -635,6 +638,50 @@ export default function Accounting() {
     }
 
 
+    function openEntryByNumber(
+        numberValue = entryNumberSearch
+    ) {
+
+        const entryNumber = Number(numberValue);
+
+        if (
+            !Number.isInteger(entryNumber)
+            ||
+            entryNumber <= 0
+        ) {
+
+            alert("Ingresá un número de asiento válido");
+            return;
+
+        }
+
+        const group = journalGroups.find(
+            (item) =>
+                Number(item.entry_number)
+                ===
+                entryNumber
+        );
+
+        if (!group) {
+
+            alert(
+                `No se encontró el asiento N.º ${entryNumber}`
+            );
+            return;
+
+        }
+
+        setEntryNumberSearch(
+            String(entryNumber)
+        );
+
+        setShowJournal(true);
+
+        startEditEntry(group);
+
+    }
+
+
     function originLabel(
         origin
     ) {
@@ -669,6 +716,9 @@ export default function Accounting() {
 
             entry_group:
             group.entry_group,
+
+            entry_number:
+            group.entry_number,
 
             date:
             String(
@@ -2237,9 +2287,63 @@ export default function Accounting() {
 
                             </div>
 
-                            <button onClick={loadAccountingData}>
-                                🔄 Actualizar
-                            </button>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: 8,
+                                    alignItems: "end",
+                                    flexWrap: "wrap"
+                                }}
+                            >
+
+                                <div>
+
+                                    <label>N.º de asiento</label>
+
+                                    <br />
+
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        value={entryNumberSearch}
+                                        onChange={(event) =>
+                                            setEntryNumberSearch(
+                                                event.target.value
+                                            )
+                                        }
+                                        onKeyDown={(event) => {
+
+                                            if (event.key === "Enter") {
+
+                                                openEntryByNumber();
+
+                                            }
+
+                                        }}
+                                        placeholder="Ej. 37"
+                                        style={{
+                                            width: 120,
+                                            padding: 8,
+                                            marginTop: 5
+                                        }}
+                                    />
+
+                                </div>
+
+                                <button
+                                    onClick={() =>
+                                        openEntryByNumber()
+                                    }
+                                >
+                                    🔎 Buscar / modificar
+                                </button>
+
+                                <button onClick={loadAccountingData}>
+                                    🔄 Actualizar
+                                </button>
+
+                            </div>
 
                         </div>
 
@@ -2290,8 +2394,12 @@ export default function Accounting() {
                                                         marginBottom: 5
                                                     }}
                                                 >
-                                                    Asiento #
-                                                    {group.first_id}
+                                                    Asiento N.º{" "}
+                                                    {
+                                                        group.entry_number
+                                                        ??
+                                                        group.first_id
+                                                    }
                                                     {" · "}
                                                     {group.date}
                                                     {" · "}
@@ -2547,6 +2655,11 @@ export default function Accounting() {
 
                                             <h2 style={{ marginBottom: 5 }}>
                                                 ✏️ Editar asiento
+                                                {
+                                                    editingEntry.entry_number
+                                                        ? ` N.º ${editingEntry.entry_number}`
+                                                        : ""
+                                                }
                                             </h2>
 
                                             <p style={{ marginTop: 0 }}>
@@ -3134,6 +3247,7 @@ export default function Accounting() {
 
                                             <tr>
 
+                                                <th style={cellStyle}>N.º Asiento</th>
                                                 <th style={cellStyle}>Fecha</th>
                                                 <th style={cellStyle}>Concepto</th>
                                                 <th style={cellStyle}>Debe</th>
@@ -3154,7 +3268,7 @@ export default function Accounting() {
 
                                                         <td
                                                             style={cellStyle}
-                                                            colSpan="5"
+                                                            colSpan="6"
                                                         >
                                                             No hay movimientos
                                                             para el período.
@@ -3167,6 +3281,29 @@ export default function Accounting() {
                                                     ledgerRows.map((movement) => (
 
                                                         <tr key={movement.id}>
+
+                                                            <td style={cellStyle}>
+
+                                                                {
+                                                                    movement.entry_number
+                                                                        ? (
+                                                                            <button
+                                                                                onClick={() =>
+                                                                                    openEntryByNumber(
+                                                                                        movement.entry_number
+                                                                                    )
+                                                                                }
+                                                                                title="Abrir este asiento para modificar"
+                                                                            >
+                                                                                {
+                                                                                    movement.entry_number
+                                                                                }
+                                                                            </button>
+                                                                        )
+                                                                        : "-"
+                                                                }
+
+                                                            </td>
 
                                                             <td style={cellStyle}>
                                                                 {movement.date}
@@ -3222,7 +3359,7 @@ export default function Accounting() {
 
                                                 <th
                                                     style={cellStyle}
-                                                    colSpan="2"
+                                                    colSpan="3"
                                                 >
                                                     Totales
                                                 </th>
