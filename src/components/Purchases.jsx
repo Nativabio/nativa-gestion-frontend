@@ -17,6 +17,7 @@ export default function Purchases() {
 
     const [date, setDate] = useState(today);
     const [paymentMethod, setPaymentMethod] = useState("Caja");
+    const [installmentsCount, setInstallmentsCount] = useState(1);
     const [shippingCost, setShippingCost] = useState(0);
     const [materials, setMaterials] = useState([]);
     const [resaleProducts, setResaleProducts] = useState([]);
@@ -237,6 +238,27 @@ export default function Purchases() {
     const purchaseTotal =
         inventorySubtotal + productionSubtotal + shipping;
 
+    const validInstallmentsCount = Math.max(
+        Math.trunc(Number(installmentsCount || 0)),
+        0
+    );
+
+    const installmentPreviewAmount =
+        paymentMethod === "Tarjeta" && validInstallmentsCount > 0
+            ? purchaseTotal / validInstallmentsCount
+            : 0;
+
+    function installmentDueDate(installmentNumber) {
+        if (!date) return "";
+
+        const baseDate = new Date(`${date}T12:00:00`);
+        baseDate.setDate(
+            baseDate.getDate() + (30 * installmentNumber)
+        );
+
+        return baseDate.toLocaleDateString("es-AR");
+    }
+
     function formatMoney(value) {
         return Number(value || 0).toLocaleString("es-AR", {
             style: "currency",
@@ -252,6 +274,7 @@ export default function Purchases() {
         setInvoiceNumber("");
         setNotes("");
         setPaymentMethod("Caja");
+        setInstallmentsCount(1);
         setShippingCost(0);
         setDate(today);
         setEditingPurchase(null);
@@ -290,6 +313,9 @@ export default function Purchases() {
         setNotes(purchase.notes || "");
         setDate(String(purchase.date || today).substring(0, 10));
         setPaymentMethod(purchase.payment_method || "Caja");
+        setInstallmentsCount(
+            Number(purchase.installments_count || 0)
+        );
         setShippingCost(savedShipping);
 
         setItems(
@@ -403,11 +429,24 @@ export default function Purchases() {
             return;
         }
 
+        if (
+            paymentMethod === "Tarjeta"
+            && !editingPurchase
+            && validInstallmentsCount < 1
+        ) {
+            alert("Ingresá la cantidad de cuotas de la tarjeta");
+            return;
+        }
+
         const payload = {
             supplier,
             invoice_number: invoiceNumber,
             date,
             payment_method: paymentMethod,
+            installments_count:
+                paymentMethod === "Tarjeta"
+                    ? validInstallmentsCount
+                    : 0,
             shipping_cost: shipping,
             notes,
             items: items.map((item) => ({
@@ -484,6 +523,7 @@ export default function Purchases() {
                         body: JSON.stringify({
                             purchase_id: purchase.id,
                             items: payload.items,
+                            installments_count: payload.installments_count,
                             shipping_cost: payload.shipping_cost,
                             extra_items: payload.extra_items,
                             notes: payload.notes
@@ -583,9 +623,18 @@ export default function Purchases() {
                         <label>Forma de pago</label>
                         <select
                             value={paymentMethod}
-                            onChange={(event) =>
-                                setPaymentMethod(event.target.value)
-                            }
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                setPaymentMethod(value);
+
+                                if (
+                                    value === "Tarjeta"
+                                    && Number(installmentsCount || 0) <= 0
+                                    && !editingPurchase
+                                ) {
+                                    setInstallmentsCount(1);
+                                }
+                            }}
                             style={styles.input}
                         >
                             <option value="Caja">Efectivo / Caja</option>
@@ -603,6 +652,54 @@ export default function Purchases() {
                             </option>
                         </select>
                     </div>
+
+                    {paymentMethod === "Tarjeta" && (
+                        <div>
+                            <label>Cantidad de cuotas</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="60"
+                                step="1"
+                                value={
+                                    installmentsCount > 0
+                                        ? installmentsCount
+                                        : ""
+                                }
+                                onChange={(event) =>
+                                    setInstallmentsCount(
+                                        Math.max(
+                                            Math.trunc(
+                                                Number(
+                                                    event.target.value || 0
+                                                )
+                                            ),
+                                            0
+                                        )
+                                    )
+                                }
+                                placeholder="Ej. 3"
+                                style={styles.input}
+                            />
+                            <div style={styles.helpText}>
+                                {
+                                    validInstallmentsCount > 0
+                                        ? `${validInstallmentsCount} cuota${
+                                            validInstallmentsCount === 1
+                                                ? ""
+                                                : "s"
+                                        } de aprox. ${formatMoney(
+                                            installmentPreviewAmount
+                                        )}`
+                                        : (
+                                            editingPurchase
+                                                ? "Compra anterior sin cronograma de cuotas."
+                                                : "Ingresá la cantidad de cuotas."
+                                        )
+                                }
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label>Costo de envío</label>
@@ -630,6 +727,35 @@ export default function Purchases() {
                         />
                     </div>
                 </div>
+
+                {
+                    paymentMethod === "Tarjeta"
+                    && validInstallmentsCount > 0
+                    && (
+                        <div style={styles.installmentsBox}>
+                            <strong>💳 Plan de cuotas</strong>
+                            <div>
+                                Total: {formatMoney(purchaseTotal)}
+                                {" · "}
+                                {validInstallmentsCount} cuota
+                                {validInstallmentsCount === 1 ? "" : "s"}
+                                {" · "}
+                                aprox. {formatMoney(installmentPreviewAmount)}
+                                {" cada una"}
+                            </div>
+                            <div style={styles.helpText}>
+                                Primera exigible:{" "}
+                                {installmentDueDate(1)}
+                                {" · "}
+                                Última exigible:{" "}
+                                {installmentDueDate(validInstallmentsCount)}
+                                {" · "}
+                                El sistema las pasa a Tarjeta de crédito
+                                a pagar cada 30 días.
+                            </div>
+                        </div>
+                    )
+                }
 
                 <hr style={styles.separator} />
 
@@ -1040,6 +1166,14 @@ const styles = {
         color: "#666"
     },
     separator: { margin: "18px 0" },
+    installmentsBox: {
+        marginTop: 14,
+        padding: 11,
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        background: "#fafafa",
+        lineHeight: 1.5
+    },
     infoBox: {
         marginBottom: 14,
         padding: 11,
