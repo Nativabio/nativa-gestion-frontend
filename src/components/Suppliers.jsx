@@ -139,28 +139,67 @@ export default function Suppliers() {
                     style={{
                         border:"1px solid #ddd",
                         borderRadius:8,
-                        padding:15,
-                        marginBottom:10
+                        padding:"10px 14px",
+                        marginBottom:8
                     }}
                 >
 
-                    <b>{supplier.name}</b>
+                    <div
+                        style={{
+                            display:"grid",
+                            gridTemplateColumns:
+                                "minmax(170px,1.3fr) repeat(4,minmax(120px,1fr))",
+                            gap:"10px 16px",
+                            alignItems:"center",
+                            textAlign:"left",
+                            lineHeight:1.3
+                        }}
+                    >
 
-                    <br/>
+                        <b>{supplier.name}</b>
 
-                    👤 {supplier.contact}
+                        <span>
+                            {supplier.contact
+                                ? `👤 ${supplier.contact}`
+                                : ""}
+                        </span>
 
-                    <br/>
+                        <span>
+                            {supplier.phone
+                                ? `📞 ${supplier.phone}`
+                                : ""}
+                        </span>
 
-                    📞 {supplier.phone}
+                        <span>
+                            {supplier.email
+                                ? `📧 ${supplier.email}`
+                                : ""}
+                        </span>
 
-                    <br/>
+                        <span>
+                            {supplier.payment_terms
+                                ? `💳 ${supplier.payment_terms}`
+                                : ""}
+                        </span>
 
-                    📧 {supplier.email}
+                    </div>
 
-                    <br/>
-
-                    💳 {supplier.payment_terms}
+                    {supplier.notes && (
+                        <div
+                            style={{
+                                marginTop:6,
+                                fontSize:13,
+                                color:"#666",
+                                textAlign:"left",
+                                whiteSpace:"nowrap",
+                                overflow:"hidden",
+                                textOverflow:"ellipsis"
+                            }}
+                            title={supplier.notes}
+                        >
+                            📝 {supplier.notes}
+                        </div>
+                    )}
 
                 </div>
 
