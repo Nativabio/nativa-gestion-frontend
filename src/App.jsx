@@ -7,6 +7,7 @@ import Lots from "./components/Lots";
 import Suppliers from "./components/Suppliers";
 import Sales from "./components/Sales";
 import Accounting from "./components/Accounting";
+import Notes from "./components/Notes";
 import DashboardRankings from "./components/DashboardRankings";
 import {
   getStoredUsername,
@@ -209,6 +210,8 @@ function App() {
 
         <button onClick={() => setTab("accounting")}>💰 Contabilidad</button>
 
+        <button onClick={() => setTab("notes")}>📝 Encargos / Ideas</button>
+
         <button onClick={() => setTab("settings")}>⚙️ Configuración</button>
 
       </div>
@@ -232,6 +235,8 @@ function App() {
         {tab === "sales" && <Sales />}
 
         {tab === "accounting" && <Accounting />}
+
+        {tab === "notes" && <Notes />}
 
         {tab === "settings" && <Settings />}
 
