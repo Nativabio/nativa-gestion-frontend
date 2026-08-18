@@ -368,8 +368,17 @@ export default function Products() {
                 </div>
             </div>
 
-            <div style={{ overflowX: "auto" }}>
+            <div style={styles.tableWrapper}>
                 <table style={styles.table}>
+                    <colgroup>
+                        <col style={{ width: "23%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col style={{ width: "7%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: "13%" }} />
+                        <col style={{ width: "16%" }} />
+                    </colgroup>
                     <thead>
                         <tr>
                             <th style={styles.th}>Producto</th>
@@ -458,26 +467,29 @@ export default function Products() {
                                                     event.target.value
                                                 )
                                             }
-                                            style={{ width: 125 }}
+                                            style={styles.priceInput}
                                         />
                                     </td>
                                     <td style={styles.tdCenter}>
-                                        <button
-                                            onClick={() =>
-                                                updateProduct(product)
-                                            }
-                                        >
-                                            💾 Guardar
-                                        </button>
+                                        <div style={styles.actionButtons}>
+                                            <button
+                                                onClick={() =>
+                                                    updateProduct(product)
+                                                }
+                                                style={styles.actionButton}
+                                            >
+                                                💾 Guardar
+                                            </button>
 
-                                        <button
-                                            onClick={() =>
-                                                deleteProduct(product)
-                                            }
-                                            style={{ marginLeft: 8 }}
-                                        >
-                                            🗑️ Eliminar
-                                        </button>
+                                            <button
+                                                onClick={() =>
+                                                    deleteProduct(product)
+                                                }
+                                                style={styles.actionButton}
+                                            >
+                                                🗑️ Eliminar
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             );
@@ -586,71 +598,99 @@ const styles = {
         flexDirection: "column",
         gap: 7
     },
+    tableWrapper: {
+        width: "100%",
+        overflowX: "hidden"
+    },
     table: {
         width: "100%",
-        minWidth: 1480,
-        borderCollapse: "collapse"
+        tableLayout: "fixed",
+        borderCollapse: "collapse",
+        fontSize: 13
     },
     th: {
         textAlign: "left",
-        padding: 10,
+        padding: "8px 6px",
         borderBottom: "2px solid #bbb",
-        background: "#f6f6f6"
+        background: "#f6f6f6",
+        lineHeight: 1.15
     },
     thRight: {
         textAlign: "right",
-        padding: 10,
+        padding: "8px 6px",
         borderBottom: "2px solid #bbb",
-        background: "#f6f6f6"
+        background: "#f6f6f6",
+        lineHeight: 1.15
     },
     thCenter: {
         textAlign: "center",
-        padding: 10,
+        padding: "8px 6px",
         borderBottom: "2px solid #bbb",
-        background: "#f6f6f6"
+        background: "#f6f6f6",
+        lineHeight: 1.15
     },
     td: {
-        padding: 10,
-        borderBottom: "1px solid #ddd"
+        padding: "7px 6px",
+        borderBottom: "1px solid #ddd",
+        overflowWrap: "anywhere"
     },
     tdStrong: {
-        padding: 10,
+        padding: "7px 6px",
         borderBottom: "1px solid #ddd",
-        fontWeight: "bold"
+        fontWeight: "bold",
+        overflowWrap: "anywhere"
     },
     tdRight: {
-        padding: 10,
+        padding: "7px 6px",
         borderBottom: "1px solid #ddd",
         textAlign: "right"
     },
     tdRightStrong: {
-        padding: 10,
+        padding: "7px 6px",
         borderBottom: "1px solid #ddd",
         textAlign: "right",
         fontWeight: "bold"
     },
     tdCenter: {
-        padding: 10,
+        padding: "7px 4px",
         borderBottom: "1px solid #ddd",
-        textAlign: "center",
-        whiteSpace: "nowrap"
+        textAlign: "center"
+    },
+    priceInput: {
+        width: "100%",
+        maxWidth: 100,
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: "4px 5px"
+    },
+    actionButtons: {
+        display: "flex",
+        justifyContent: "center",
+        gap: 4,
+        flexWrap: "wrap"
+    },
+    actionButton: {
+        padding: "4px 6px",
+        fontSize: 11,
+        whiteSpace: "nowrap",
+        cursor: "pointer"
     },
     resaleBadge: {
         display: "inline-block",
-        padding: "3px 7px",
+        padding: "3px 5px",
         borderRadius: 10,
         background: "#fff3cd",
         color: "#6a5200",
-        fontSize: 12,
+        fontSize: 11,
         whiteSpace: "nowrap"
     },
     manufacturedBadge: {
         display: "inline-block",
-        padding: "3px 7px",
+        padding: "3px 5px",
         borderRadius: 10,
         background: "#e8f1e5",
         color: "#34522d",
-        fontSize: 12,
+        fontSize: 11,
         whiteSpace: "nowrap"
     },
     smallButton: {
