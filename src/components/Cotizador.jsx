@@ -47,6 +47,10 @@ function numberValue(value) {
 }
 
 function formatMoney(value) {
+    if (value === null || value === undefined || value === "") {
+        return "—";
+    }
+
     return numberValue(value).toLocaleString("es-AR", {
         style: "currency",
         currency: "ARS",
@@ -85,18 +89,6 @@ function normalizationForUnit(unit) {
         return {
             base: 100,
             label: `100 ${unit || ""}`.trim()
-        };
-    }
-
-    if (
-        value === "kg"
-        || value.includes("kilogram")
-        || value === "l"
-        || value.includes("litro")
-    ) {
-        return {
-            base: 1,
-            label: unit || "unidad"
         };
     }
 
@@ -139,6 +131,14 @@ function shippingAllocation(purchase, item) {
     return shipping * itemPrice / base;
 }
 
+function supplierOrder(name) {
+    const index = HABITUAL_SUPPLIERS.findIndex(
+        (supplier) => supplier.name === name
+    );
+
+    return index >= 0 ? index : 99;
+}
+
 export default function Cotizador() {
     const [materials, setMaterials] = useState([]);
     const [purchases, setPurchases] = useState([]);
@@ -146,6 +146,11 @@ export default function Cotizador() {
     const [desiredQuantity, setDesiredQuantity] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    const [mode, setMode] = useState("history");
+    const [webLoading, setWebLoading] = useState(false);
+    const [webError, setWebError] = useState("");
+    const [webData, setWebData] = useState(null);
 
     useEffect(() => {
         load();
@@ -246,19 +251,16 @@ export default function Cotizador() {
 
                 const finalCost = price + allocatedShipping;
                 const unitCost = finalCost / quantity;
-                const unitCostWithoutShipping = price / quantity;
 
                 rows.push({
                     purchaseId: purchase.id,
-                    purchaseNumber: purchase.number || "",
                     supplier,
                     date: purchase.date || "",
                     quantity,
                     price,
                     allocatedShipping,
                     finalCost,
-                    unitCost,
-                    unitCostWithoutShipping
+                    unitCost
                 });
             });
         });
@@ -320,6 +322,62 @@ export default function Cotizador() {
         0
     );
 
+    async function consultWebPrices() {
+        if (!selected) {
+            setWebError("Elegí una materia prima.");
+            return;
+        }
+
+        setWebLoading(true);
+        setWebError("");
+        setWebData(null);
+
+        try {
+            const params = new URLSearchParams({
+                query: selected.name || "",
+                unit: unit || "",
+                quantity: String(desired || 0)
+            });
+
+            const response = await fetch(
+                `${API}/supplier-web-quotes?${params.toString()}`
+            );
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(
+                    data.error
+                    || "No se pudieron consultar los precios web."
+                );
+            }
+
+            setWebData(data);
+        } catch (err) {
+            setWebError(
+                err?.message
+                || "No se pudieron consultar los precios web."
+            );
+        } finally {
+            setWebLoading(false);
+        }
+    }
+
+    const webRows = useMemo(() => {
+        const rows = Array.isArray(webData?.results)
+            ? [...webData.results]
+            : [];
+
+        return rows.sort((a, b) => {
+            if (a.rank && b.rank) return a.rank - b.rank;
+            if (a.rank) return -1;
+            if (b.rank) return 1;
+
+            return supplierOrder(a.provider)
+                - supplierOrder(b.provider);
+        });
+    }, [webData]);
+
     if (loading) {
         return (
             <div>
@@ -335,26 +393,36 @@ export default function Cotizador() {
                 <div>
                     <h2 style={styles.title}>💲 Cotizador</h2>
                     <div style={styles.subtitle}>
-                        Compará tus proveedores según tus compras reales.
+                        Compará tus proveedores por histórico o por precio web actual.
                     </div>
                 </div>
 
                 <button onClick={load}>
-                    ↻ Actualizar
+                    ↻ Actualizar datos de Nativa
                 </button>
             </div>
 
             <div style={styles.tabs}>
-                <button style={styles.activeTab}>
+                <button
+                    style={
+                        mode === "history"
+                            ? styles.activeTab
+                            : styles.tab
+                    }
+                    onClick={() => setMode("history")}
+                >
                     📚 Histórico de Nativa
                 </button>
 
                 <button
-                    style={styles.disabledTab}
-                    disabled
-                    title="Lo agregamos en la próxima etapa"
+                    style={
+                        mode === "web"
+                            ? styles.activeTab
+                            : styles.tab
+                    }
+                    onClick={() => setMode("web")}
                 >
-                    🌐 Precios web actuales — próxima etapa
+                    🌐 Precios web actuales
                 </button>
             </div>
 
@@ -378,6 +446,8 @@ export default function Cotizador() {
                                     event.target.value
                                 );
                                 setDesiredQuantity("");
+                                setWebData(null);
+                                setWebError("");
                             }}
                             style={styles.input}
                         >
@@ -408,18 +478,18 @@ export default function Cotizador() {
                             step="any"
                             placeholder="Ej. 100, 250, 350, 500..."
                             value={desiredQuantity}
-                            onChange={(event) =>
+                            onChange={(event) => {
                                 setDesiredQuantity(
                                     event.target.value
-                                )
-                            }
+                                );
+                                setWebData(null);
+                            }}
                             disabled={!selectedMaterial}
                             style={styles.input}
                         />
 
                         <div style={styles.help}>
-                            Es opcional. El ranking funciona igual
-                            aunque no indiques cantidad.
+                            Opcional y variable según lo que vayas a comprar.
                         </div>
                     </div>
                 </div>
@@ -432,55 +502,36 @@ export default function Cotizador() {
                 </div>
             )}
 
-            {selectedMaterial && (
+            {selectedMaterial && mode === "history" && (
                 <>
                     <div style={styles.summaryRow}>
-                        <div style={styles.summaryCard}>
-                            <span style={styles.summaryLabel}>
-                                Materia prima
-                            </span>
-                            <strong>
-                                {selected?.name || "—"}
-                            </strong>
-                        </div>
-
-                        <div style={styles.summaryCard}>
-                            <span style={styles.summaryLabel}>
-                                Compras encontradas
-                            </span>
-                            <strong>
-                                {history.length}
-                            </strong>
-                        </div>
-
-                        <div style={styles.summaryCard}>
-                            <span style={styles.summaryLabel}>
-                                Comparación
-                            </span>
-                            <strong>
-                                por {normalization.label}
-                            </strong>
-                        </div>
-
+                        <Summary
+                            label="Materia prima"
+                            value={selected?.name || "—"}
+                        />
+                        <Summary
+                            label="Compras encontradas"
+                            value={history.length}
+                        />
+                        <Summary
+                            label="Comparación"
+                            value={`por ${normalization.label}`}
+                        />
                         {desired > 0 && (
-                            <div style={styles.summaryCard}>
-                                <span style={styles.summaryLabel}>
-                                    Cantidad consultada
-                                </span>
-                                <strong>
-                                    {formatQuantity(desired)}
-                                    {unit ? ` ${unit}` : ""}
-                                </strong>
-                            </div>
+                            <Summary
+                                label="Cantidad consultada"
+                                value={
+                                    `${formatQuantity(desired)}`
+                                    + (unit ? ` ${unit}` : "")
+                                }
+                            />
                         )}
                     </div>
 
                     {availableRanking.length === 0 ? (
                         <div style={styles.empty}>
-                            Todavía no hay compras registradas de
-                            <strong>
-                                {" "}{selected?.name}
-                            </strong>
+                            Todavía no hay compras registradas de{" "}
+                            <strong>{selected?.name}</strong>
                             {" "}en tus cuatro proveedores habituales.
                         </div>
                     ) : (
@@ -491,8 +542,7 @@ export default function Cotizador() {
 
                             <p style={styles.explanation}>
                                 Se usa la compra más reciente de cada proveedor
-                                y se suma el envío prorrateado. Así evitamos
-                                comparar un precio viejo con uno actual.
+                                y se suma el envío prorrateado.
                             </p>
 
                             <div style={styles.tableScroller}>
@@ -519,7 +569,7 @@ export default function Cotizador() {
                                     </thead>
 
                                     <tbody>
-                                        {ranking.map((row, index) => {
+                                        {ranking.map((row) => {
                                             if (!row.hasData) {
                                                 return (
                                                     <tr key={row.supplier}>
@@ -566,58 +616,43 @@ export default function Cotizador() {
                                                     }
                                                 >
                                                     <td style={styles.td}>
-                                                        {place === 1
-                                                            ? "🥇"
-                                                            : place === 2
-                                                                ? "🥈"
-                                                                : place === 3
-                                                                    ? "🥉"
-                                                                    : place}
+                                                        <Medal place={place} />
                                                     </td>
-
                                                     <td style={styles.td}>
                                                         <strong>
                                                             {row.supplier}
                                                         </strong>
-
                                                         {place === 1 && (
                                                             <div style={styles.bestText}>
                                                                 Mejor última compra
                                                             </div>
                                                         )}
                                                     </td>
-
                                                     <td style={styles.td}>
                                                         {formatDate(row.date)}
                                                     </td>
-
                                                     <td style={styles.td}>
                                                         {formatQuantity(row.quantity)}
                                                         {unit ? ` ${unit}` : ""}
                                                     </td>
-
                                                     <td style={styles.moneyTd}>
                                                         {formatMoney(row.price)}
                                                     </td>
-
                                                     <td style={styles.moneyTd}>
                                                         {formatMoney(
                                                             row.allocatedShipping
                                                         )}
                                                     </td>
-
                                                     <td style={styles.moneyTd}>
                                                         <strong>
                                                             {formatMoney(row.finalCost)}
                                                         </strong>
                                                     </td>
-
                                                     <td style={styles.moneyTd}>
                                                         <strong>
                                                             {formatMoney(normalizedCost)}
                                                         </strong>
                                                     </td>
-
                                                     {desired > 0 && (
                                                         <td style={styles.moneyTd}>
                                                             <strong>
@@ -654,7 +689,6 @@ export default function Cotizador() {
                                             </th>
                                         </tr>
                                     </thead>
-
                                     <tbody>
                                         {history.map((row, index) => (
                                             <tr
@@ -693,6 +727,291 @@ export default function Cotizador() {
                     )}
                 </>
             )}
+
+            {selectedMaterial && mode === "web" && (
+                <>
+                    <div style={styles.webActionCard}>
+                        <div>
+                            <h3 style={styles.cardTitle}>
+                                🌐 Consulta en las tiendas ahora
+                            </h3>
+                            <p style={styles.explanation}>
+                                Busca el producto en las webs públicas de tus
+                                cuatro proveedores. El precio web no incluye envío.
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={consultWebPrices}
+                            disabled={webLoading}
+                            style={styles.webButton}
+                        >
+                            {webLoading
+                                ? "Consultando..."
+                                : "🔎 Consultar precios actuales"}
+                        </button>
+                    </div>
+
+                    {webError && (
+                        <div style={styles.error}>
+                            {webError}
+                        </div>
+                    )}
+
+                    {webLoading && (
+                        <div style={styles.empty}>
+                            Consultando Amizcle, Ecomarketshop,
+                            Parvati y Ecosmética...
+                        </div>
+                    )}
+
+                    {!webLoading && !webData && !webError && (
+                        <div style={styles.empty}>
+                            Tocá <strong>Consultar precios actuales</strong>
+                            {" "}para buscar esta materia prima en las cuatro tiendas.
+                        </div>
+                    )}
+
+                    {!webLoading && webData && (
+                        <>
+                            <div style={styles.summaryRow}>
+                                <Summary
+                                    label="Materia prima"
+                                    value={selected?.name || "—"}
+                                />
+                                <Summary
+                                    label="Comparación"
+                                    value={
+                                        unit
+                                            ? `por 100 ${unit}`
+                                            : "según presentación"
+                                    }
+                                />
+                                {desired > 0 && (
+                                    <Summary
+                                        label="Cantidad que necesitás"
+                                        value={
+                                            `${formatQuantity(desired)}`
+                                            + (unit ? ` ${unit}` : "")
+                                        }
+                                    />
+                                )}
+                                <Summary
+                                    label="Proveedores consultados"
+                                    value={webRows.length}
+                                />
+                            </div>
+
+                            <div style={styles.notice}>
+                                <strong>Importante:</strong>{" "}
+                                son precios publicados al momento de consultar,
+                                sin envío ni descuentos especiales. Si Nativa
+                                no detecta la presentación con seguridad,
+                                muestra el precio pero no lo usa para el ranking.
+                            </div>
+
+                            <div style={styles.card}>
+                                <h3 style={styles.cardTitle}>
+                                    Resultado web actual
+                                </h3>
+
+                                <div style={styles.tableScroller}>
+                                    <table style={styles.table}>
+                                        <thead>
+                                            <tr>
+                                                <th style={styles.th}>Puesto</th>
+                                                <th style={styles.th}>Proveedor</th>
+                                                <th style={styles.th}>Producto encontrado</th>
+                                                <th style={styles.th}>Presentación</th>
+                                                <th style={styles.th}>Precio publicado</th>
+                                                <th style={styles.th}>
+                                                    Costo / 100 {unit || ""}
+                                                </th>
+                                                {desired > 0 && (
+                                                    <th style={styles.th}>
+                                                        Equivalente {formatQuantity(desired)}
+                                                        {unit ? ` ${unit}` : ""}
+                                                    </th>
+                                                )}
+                                                <th style={styles.th}>Estado</th>
+                                                <th style={styles.th}></th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            {webRows.map((row) => (
+                                                <tr
+                                                    key={row.provider}
+                                                    style={
+                                                        row.rank === 1
+                                                            ? styles.bestRow
+                                                            : undefined
+                                                    }
+                                                >
+                                                    <td style={styles.td}>
+                                                        {row.rank
+                                                            ? <Medal place={row.rank} />
+                                                            : "—"}
+                                                    </td>
+
+                                                    <td style={styles.td}>
+                                                        <strong>
+                                                            {row.provider}
+                                                        </strong>
+                                                        {row.rank === 1 && (
+                                                            <div style={styles.bestText}>
+                                                                Más barato detectado
+                                                            </div>
+                                                        )}
+                                                    </td>
+
+                                                    <td style={styles.td}>
+                                                        {row.product_name || "—"}
+                                                    </td>
+
+                                                    <td style={styles.td}>
+                                                        {row.presentation_quantity
+                                                            ? (
+                                                                <>
+                                                                    {formatQuantity(
+                                                                        row.presentation_quantity
+                                                                    )}{" "}
+                                                                    {row.presentation_unit}
+                                                                </>
+                                                            )
+                                                            : "No detectada"}
+                                                    </td>
+
+                                                    <td style={styles.moneyTd}>
+                                                        {row.price !== undefined
+                                                            ? formatMoney(row.price)
+                                                            : "—"}
+                                                    </td>
+
+                                                    <td style={styles.moneyTd}>
+                                                        {row.normalized_cost !== null
+                                                            && row.normalized_cost !== undefined
+                                                            ? formatMoney(
+                                                                row.normalized_cost
+                                                            )
+                                                            : "—"}
+                                                    </td>
+
+                                                    {desired > 0 && (
+                                                        <td style={styles.moneyTd}>
+                                                            {row.estimated_cost !== null
+                                                                && row.estimated_cost !== undefined
+                                                                ? formatMoney(
+                                                                    row.estimated_cost
+                                                                )
+                                                                : "—"}
+                                                        </td>
+                                                    )}
+
+                                                    <td style={styles.td}>
+                                                        <Status row={row} />
+                                                    </td>
+
+                                                    <td style={styles.td}>
+                                                        {row.product_url ? (
+                                                            <a
+                                                                href={row.product_url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                            >
+                                                                Abrir producto
+                                                            </a>
+                                                        ) : row.store_url ? (
+                                                            <a
+                                                                href={row.store_url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                            >
+                                                                Abrir tienda
+                                                            </a>
+                                                        ) : null}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+function Summary({ label, value }) {
+    return (
+        <div style={styles.summaryCard}>
+            <span style={styles.summaryLabel}>
+                {label}
+            </span>
+            <strong>{value}</strong>
+        </div>
+    );
+}
+
+function Medal({ place }) {
+    if (place === 1) return "🥇";
+    if (place === 2) return "🥈";
+    if (place === 3) return "🥉";
+    return place;
+}
+
+function Status({ row }) {
+    if (row.status === "ok" && row.normalized_cost !== null) {
+        return (
+            <span style={styles.okBadge}>
+                ✓ Comparable
+            </span>
+        );
+    }
+
+    if (row.status === "ok") {
+        return (
+            <div>
+                <span style={styles.warningBadge}>
+                    ⚠ Revisar presentación
+                </span>
+                {row.message && (
+                    <div style={styles.statusDetail}>
+                        {row.message}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    if (row.status === "not_found") {
+        return (
+            <div>
+                <span style={styles.mutedBadge}>
+                    Sin resultado
+                </span>
+                {row.message && (
+                    <div style={styles.statusDetail}>
+                        {row.message}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <span style={styles.errorBadge}>
+                Error de consulta
+            </span>
+            {row.message && (
+                <div style={styles.statusDetail}>
+                    {row.message}
+                </div>
+            )}
         </div>
     );
 }
@@ -719,12 +1038,15 @@ const styles = {
         flexWrap: "wrap",
         marginBottom: 16
     },
-    activeTab: {
-        fontWeight: "bold"
+    tab: {
+        padding: "8px 12px",
+        cursor: "pointer"
     },
-    disabledTab: {
-        opacity: 0.55,
-        cursor: "not-allowed"
+    activeTab: {
+        padding: "8px 12px",
+        cursor: "pointer",
+        fontWeight: "bold",
+        border: "2px solid #555"
     },
     error: {
         padding: 12,
@@ -743,7 +1065,8 @@ const styles = {
     },
     formGrid: {
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(240px, 1fr))",
         gap: 14
     },
     label: {
@@ -763,7 +1086,8 @@ const styles = {
     },
     summaryRow: {
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(160px, 1fr))",
         gap: 10,
         marginBottom: 16
     },
@@ -787,6 +1111,23 @@ const styles = {
         background: "#fff",
         marginBottom: 16
     },
+    webActionCard: {
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        padding: 16,
+        background: "#fff",
+        marginBottom: 16,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        flexWrap: "wrap"
+    },
+    webButton: {
+        padding: "10px 14px",
+        fontWeight: "bold",
+        cursor: "pointer"
+    },
     cardTitle: {
         marginTop: 0,
         marginBottom: 6
@@ -795,7 +1136,15 @@ const styles = {
         color: "#666",
         fontSize: 13,
         marginTop: 0,
-        marginBottom: 14
+        marginBottom: 8
+    },
+    notice: {
+        border: "1px solid #e0d29e",
+        borderRadius: 9,
+        background: "#fffbea",
+        padding: 12,
+        marginBottom: 16,
+        fontSize: 13
     },
     tableScroller: {
         width: "100%",
@@ -804,7 +1153,7 @@ const styles = {
     table: {
         width: "100%",
         borderCollapse: "collapse",
-        minWidth: 760
+        minWidth: 850
     },
     th: {
         textAlign: "left",
@@ -848,6 +1197,49 @@ const styles = {
         padding: 26,
         textAlign: "center",
         color: "#666",
-        background: "#fff"
+        background: "#fff",
+        marginBottom: 16
+    },
+    okBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: "#e8f6eb",
+        color: "#226d36",
+        fontSize: 11,
+        fontWeight: "bold"
+    },
+    warningBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: "#fff3cd",
+        color: "#7a5c00",
+        fontSize: 11,
+        fontWeight: "bold"
+    },
+    mutedBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: "#f0f0f0",
+        color: "#666",
+        fontSize: 11,
+        fontWeight: "bold"
+    },
+    errorBadge: {
+        display: "inline-block",
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: "#fde8e8",
+        color: "#9a2222",
+        fontSize: 11,
+        fontWeight: "bold"
+    },
+    statusDetail: {
+        marginTop: 4,
+        color: "#777",
+        fontSize: 11,
+        maxWidth: 240
     }
 };
