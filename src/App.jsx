@@ -8,6 +8,7 @@ import Suppliers from "./components/Suppliers";
 import Sales from "./components/Sales";
 import Accounting from "./components/Accounting";
 import Notes from "./components/Notes";
+import Cotizador from "./components/Cotizador";
 import DashboardRankings from "./components/DashboardRankings";
 import {
   getStoredUsername,
@@ -204,6 +205,8 @@ function App() {
 
         <button onClick={() => setTab("purchases")}>🛒 Compras</button>
 
+        <button onClick={() => setTab("cotizador")}>💲 Cotizador</button>
+
         <button onClick={() => setTab("suppliers")}>👥 Proveedores</button>
 
         <button onClick={() => setTab("sales")}>🧾 Ventas</button>
@@ -229,6 +232,8 @@ function App() {
         {tab === "lots" && <Lots />}
 
         {tab === "purchases" && <Purchases />}
+
+        {tab === "cotizador" && <Cotizador />}
 
         {tab === "suppliers" && <Suppliers />}
 
