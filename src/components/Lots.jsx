@@ -589,59 +589,22 @@ export default function Lots() {
     }
 
     async function deleteLot(lot) {
-        const produced = Number(lot.units_produced || 0);
-        const available = Math.max(
-            Math.min(
-                Number(lot.remaining_units || 0),
-                produced
-            ),
-            0
-        );
-
-        const partialDeletion =
-            Math.abs(available - produced) > 0.000001;
-
-        let message =
+        const message =
             `¿Eliminar definitivamente el lote ${lot.lot_number}?\n\n`
             +
-            `Se descontarán ${formatNumber(available)} ${
-                String(lot.output_type).toUpperCase()
-                    === "RAW_MATERIAL"
-                    ? "del stock de la materia prima elaborada"
-                    : "unidades del producto terminado"
-            }.`;
-
-        if (partialDeletion) {
-            message +=
-                `\n\nEl lote produjo ${formatNumber(produced)}, pero `
-                +
-                `solo conserva ${formatNumber(available)} disponibles. `
-                +
-                "Las materias primas se repondrán únicamente en esa proporción.";
-        } else {
-            message +=
-                " Se repondrán todas las materias primas utilizadas.";
-        }
-
-        message +=
-            "\n\nMODO TEMPORAL DE LIMPIEZA: aunque el lote tenga ventas, "
+            "MODO TEMPORAL PARA LOTES DE PRUEBA:\n"
             +
-            "movimientos de stock u otros lotes vinculados, se eliminará igual. "
+            "• No se descontará stock de productos.\n"
             +
-            "Esos registros permanecerán y solo se quitarán sus vínculos técnicos."
+            "• No se devolverán materias primas.\n"
             +
-            "\n\nLos asientos contables no se modificarán. "
+            "• No se modificarán costos ni asientos contables.\n\n"
             +
-            "Después deberás corregirlos manualmente desde el Libro Diario.";
-
-        if (lot.material_history_source === "FORMULA_ESTIMATE") {
-            message +=
-                "\n\n⚠️ Este lote es anterior al historial detallado. "
-                +
-                "Las materias primas se repondrán según las cantidades "
-                +
-                "de la fórmula actual.";
-        }
+            "Si existen ventas, movimientos u otros lotes vinculados, "
+            +
+            "se quitarán solamente las referencias técnicas necesarias. "
+            +
+            "Esos registros permanecerán guardados.";
 
         const confirmed = window.confirm(message);
 
@@ -1147,7 +1110,7 @@ export default function Lots() {
                         </div>
 
                         <div>
-                            <label>Resultado</label>
+                            <label>Fórmula</label>
                             <br />
                             <select
                                 value={productFilter}
@@ -1201,21 +1164,36 @@ export default function Lots() {
                         Se muestran <b>{filteredLots.length}</b> lotes.
                     </div>
 
-                    <div style={{ overflowX: "auto" }}>
+                    <div style={{ width: "100%", maxWidth: "100%" }}>
                         <table
                             style={{
                                 width: "100%",
+                                maxWidth: "100%",
                                 borderCollapse: "collapse",
-                                minWidth: 1260
+                                tableLayout: "fixed",
+                                fontSize: 12
                             }}
                             border="1"
-                            cellPadding="7"
+                            cellPadding="4"
                         >
+                            <colgroup>
+                                <col style={{ width: "5%" }} />
+                                <col style={{ width: "9%" }} />
+                                <col style={{ width: "11%" }} />
+                                <col style={{ width: "14%" }} />
+                                <col style={{ width: "7%" }} />
+                                <col style={{ width: "7%" }} />
+                                <col style={{ width: "9%" }} />
+                                <col style={{ width: "9%" }} />
+                                <col style={{ width: "9%" }} />
+                                <col style={{ width: "8%" }} />
+                                <col style={{ width: "12%" }} />
+                            </colgroup>
+
                             <thead>
                                 <tr>
                                     <th>Lote</th>
                                     <th>Fecha</th>
-                                    <th>Resultado</th>
                                     <th>Tipo</th>
                                     <th>Fórmula</th>
                                     <th>Producido</th>
@@ -1231,14 +1209,14 @@ export default function Lots() {
                             <tbody>
                                 {loadingLots ? (
                                     <tr>
-                                        <td colSpan="12" style={{ textAlign: "center" }}>
+                                        <td colSpan="11" style={{ textAlign: "center" }}>
                                             Cargando lotes...
                                         </td>
                                     </tr>
                                 ) : filteredLots.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan="12"
+                                            colSpan="11"
                                             style={{
                                                 textAlign: "center",
                                                 padding: 20
@@ -1250,10 +1228,11 @@ export default function Lots() {
                                 ) : (
                                     filteredLots.map((lot) => (
                                         <tr key={lot.id}>
-                                            <td><b>{lot.lot_number}</b></td>
+                                            <td style={{ overflowWrap: "anywhere" }}>
+                                                <b>{lot.lot_number}</b>
+                                            </td>
                                             <td>{formatDate(lot.production_date)}</td>
-                                            <td>{lot.product_name}</td>
-                                            <td>
+                                            <td style={{ overflowWrap: "anywhere" }}>
                                                 {String(
                                                     lot.output_type || "PRODUCT"
                                                 ).toUpperCase()
@@ -1261,7 +1240,9 @@ export default function Lots() {
                                                     ? "Materia prima elaborada"
                                                     : "Producto terminado"}
                                             </td>
-                                            <td>{lot.formula_name}</td>
+                                            <td style={{ overflowWrap: "anywhere" }}>
+                                                {lot.formula_name}
+                                            </td>
                                             <td>
                                                 {formatNumber(lot.units_produced)}
                                                 {String(
@@ -1283,42 +1264,62 @@ export default function Lots() {
                                             <td>{formatMoney(lot.material_cost)}</td>
                                             <td>{formatMoney(lot.labor_cost)}</td>
                                             <td><b>{formatMoney(lot.total_cost)}</b></td>
-                                            <td>{lot.status}</td>
-                                            <td style={{ whiteSpace: "nowrap" }}>
-                                                <button
-                                                    onClick={() =>
-                                                        setExpandedLotId(
-                                                            expandedLotId === lot.id
-                                                                ? null
-                                                                : lot.id
-                                                        )
-                                                    }
+                                            <td style={{ overflowWrap: "anywhere" }}>
+                                                {lot.status}
+                                            </td>
+                                            <td style={{ padding: 4 }}>
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        gap: 4
+                                                    }}
                                                 >
-                                                    {expandedLotId === lot.id
-                                                        ? "Ocultar"
-                                                        : "Ver detalle"}
-                                                </button>
+                                                    <button
+                                                        onClick={() =>
+                                                            setExpandedLotId(
+                                                                expandedLotId === lot.id
+                                                                    ? null
+                                                                    : lot.id
+                                                            )
+                                                        }
+                                                        style={{
+                                                            padding: "4px 5px",
+                                                            fontSize: 11
+                                                        }}
+                                                    >
+                                                        {expandedLotId === lot.id
+                                                            ? "Ocultar"
+                                                            : "Ver detalle"}
+                                                    </button>
 
-                                                <button
-                                                    onClick={() => openEditLot(lot)}
-                                                    disabled={!lot.can_edit}
-                                                    title={
-                                                        lot.can_edit
-                                                            ? "Editar lote"
-                                                            : "Este lote no se puede editar"
-                                                    }
-                                                    style={{ marginLeft: 6 }}
-                                                >
-                                                    ✏️ Editar
-                                                </button>
+                                                    <button
+                                                        onClick={() => openEditLot(lot)}
+                                                        disabled={!lot.can_edit}
+                                                        title={
+                                                            lot.can_edit
+                                                                ? "Editar lote"
+                                                                : "Este lote no se puede editar"
+                                                        }
+                                                        style={{
+                                                            padding: "4px 5px",
+                                                            fontSize: 11
+                                                        }}
+                                                    >
+                                                        ✏️ Editar
+                                                    </button>
 
-                                                <button
-                                                    onClick={() => deleteLot(lot)}
-                                                    title="Eliminar lote (modo temporal sin bloqueos)"
-                                                    style={{ marginLeft: 6 }}
-                                                >
-                                                    🗑️ Eliminar
-                                                </button>
+                                                    <button
+                                                        onClick={() => deleteLot(lot)}
+                                                        title="Eliminar lote (modo temporal sin bloqueos)"
+                                                        style={{
+                                                            padding: "4px 5px",
+                                                            fontSize: 11
+                                                        }}
+                                                    >
+                                                        🗑️ Eliminar
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
