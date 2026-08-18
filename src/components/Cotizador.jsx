@@ -151,7 +151,7 @@ export default function Cotizador() {
     const [webLoading, setWebLoading] = useState(false);
     const [webError, setWebError] = useState("");
     const [webData, setWebData] = useState(null);
-    const [showSources, setShowSources] = useState(false);
+    const [maxWebQuantity, setMaxWebQuantity] = useState("500");
 
     useEffect(() => {
         load();
@@ -329,9 +329,14 @@ export default function Cotizador() {
             return;
         }
 
-        if (desired <= 0) {
+        const maxQuantity = Math.max(
+            numberValue(maxWebQuantity),
+            0
+        );
+
+        if (maxQuantity <= 0) {
             setWebError(
-                "Para comparar precios web indicá la cantidad exacta que querés comprar."
+                "Indicá la máxima presentación que querés comparar."
             );
             return;
         }
@@ -342,14 +347,13 @@ export default function Cotizador() {
 
         try {
             const params = new URLSearchParams({
-                raw_material_id: String(selected.id),
                 query: selected.name || "",
                 unit: unit || "",
-                quantity: String(desired)
+                max_quantity: String(maxQuantity)
             });
 
             const response = await fetch(
-                `${API}/supplier-web-quotes?${params.toString()}`
+                `${API}/supplier-web-unit-quotes?${params.toString()}`
             );
 
             const data = await response.json();
@@ -457,7 +461,6 @@ export default function Cotizador() {
                                 setDesiredQuantity("");
                                 setWebData(null);
                                 setWebError("");
-                                setShowSources(false);
                             }}
                             style={styles.input}
                         >
@@ -476,33 +479,64 @@ export default function Cotizador() {
                         </select>
                     </div>
 
-                    <div>
-                        <label style={styles.label}>
-                            Cantidad que necesitás
-                            {unit ? ` (${unit})` : ""}
-                        </label>
+                    {mode === "history" ? (
+                        <div>
+                            <label style={styles.label}>
+                                Cantidad que necesitás
+                                {unit ? ` (${unit})` : ""}
+                            </label>
 
-                        <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            placeholder="Ej. 100, 250, 350, 500..."
-                            value={desiredQuantity}
-                            onChange={(event) => {
-                                setDesiredQuantity(
-                                    event.target.value
-                                );
-                                setWebData(null);
-                                setShowSources(false);
-                            }}
-                            disabled={!selectedMaterial}
-                            style={styles.input}
-                        />
+                            <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                placeholder="Ej. 100, 250, 350..."
+                                value={desiredQuantity}
+                                onChange={(event) =>
+                                    setDesiredQuantity(
+                                        event.target.value
+                                    )
+                                }
+                                disabled={!selectedMaterial}
+                                style={styles.input}
+                            />
 
-                        <div style={styles.help}>
-                            Opcional y variable según lo que vayas a comprar.
+                            <div style={styles.help}>
+                                Opcional. Se usa solo para estimar
+                                el costo según tus compras históricas.
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div>
+                            <label style={styles.label}>
+                                Máxima presentación a comparar
+                                {unit ? ` (${unit})` : ""}
+                            </label>
+
+                            <input
+                                type="number"
+                                min="1"
+                                step="any"
+                                value={maxWebQuantity}
+                                onChange={(event) => {
+                                    setMaxWebQuantity(
+                                        event.target.value
+                                    );
+                                    setWebData(null);
+                                    setWebError("");
+                                }}
+                                disabled={!selectedMaterial}
+                                style={styles.input}
+                            />
+
+                            <div style={styles.help}>
+                                Por defecto 500. Nativa busca todas
+                                las presentaciones que detecte hasta
+                                ese tamaño y compara el precio por
+                                {unit === "ml" ? " ml" : " gramo"}.
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -744,53 +778,25 @@ export default function Cotizador() {
                     <div style={styles.webActionCard}>
                         <div>
                             <h3 style={styles.cardTitle}>
-                                🌐 Consulta en las tiendas ahora
+                                🌐 Mejor precio por {unit === "ml" ? "ml" : "gramo"}
                             </h3>
                             <p style={styles.explanation}>
-                                Nativa usa una ficha confirmada por vos para cada
-                                proveedor y presentación. Así no vuelve a adivinar
-                                el producto por el nombre.
+                                Nativa intenta detectar varias presentaciones
+                                de cada proveedor y se queda con la de menor
+                                costo unitario dentro del máximo indicado.
                             </p>
                         </div>
 
-                        <div style={styles.actionButtons}>
-                            <button
-                                onClick={() => {
-                                    if (desired <= 0) {
-                                        setWebError(
-                                            "Indicá primero la cantidad exacta que querés comprar."
-                                        );
-                                        return;
-                                    }
-                                    setWebError("");
-                                    setShowSources(!showSources);
-                                }}
-                                style={styles.webButton}
-                            >
-                                ⚙️ Configurar fuentes
-                            </button>
-
-                            <button
-                                onClick={consultWebPrices}
-                                disabled={webLoading}
-                                style={styles.webButton}
-                            >
-                                {webLoading
-                                    ? "Consultando..."
-                                    : "🔎 Consultar precios actuales"}
-                            </button>
-                        </div>
+                        <button
+                            onClick={consultWebPrices}
+                            disabled={webLoading}
+                            style={styles.webButton}
+                        >
+                            {webLoading
+                                ? "Consultando..."
+                                : "🔎 Comparar precios actuales"}
+                        </button>
                     </div>
-
-                    {showSources && desired > 0 && (
-                        <SourceConfiguration
-                            material={selected}
-                            quantity={desired}
-                            unit={unit}
-                            onClose={() => setShowSources(false)}
-                            onChanged={() => setWebData(null)}
-                        />
-                    )}
 
                     {webError && (
                         <div style={styles.error}>
@@ -800,16 +806,16 @@ export default function Cotizador() {
 
                     {webLoading && (
                         <div style={styles.empty}>
-                            Consultando Amizcle, Ecomarketshop,
-                            Parvati y Ecosmética...
+                            Revisando presentaciones en Amizcle,
+                            Ecomarketshop, Parvati y Ecosmética...
                         </div>
                     )}
 
                     {!webLoading && !webData && !webError && (
                         <div style={styles.empty}>
-                            Indicá una cantidad (por ejemplo 250 ml) y configurá una vez
-                            las fichas correctas con <strong>⚙️ Configurar fuentes</strong>.
-                            Después Nativa reutiliza esas fuentes para esa presentación.
+                            Tocá <strong>Comparar precios actuales</strong>.
+                            Nativa va a buscar la presentación con mejor
+                            precio unitario en cada proveedor.
                         </div>
                     )}
 
@@ -821,22 +827,17 @@ export default function Cotizador() {
                                     value={selected?.name || "—"}
                                 />
                                 <Summary
-                                    label="Comparación"
+                                    label="Ranking"
+                                    value={`por 100 ${webData.unit || unit}`}
+                                />
+                                <Summary
+                                    label="Máximo considerado"
                                     value={
-                                        unit
-                                            ? `por 100 ${unit}`
-                                            : "según presentación"
+                                        `${formatQuantity(
+                                            webData.max_quantity
+                                        )} ${webData.unit || unit}`
                                     }
                                 />
-                                {desired > 0 && (
-                                    <Summary
-                                        label="Cantidad que necesitás"
-                                        value={
-                                            `${formatQuantity(desired)}`
-                                            + (unit ? ` ${unit}` : "")
-                                        }
-                                    />
-                                )}
                                 <Summary
                                     label="Proveedores consultados"
                                     value={webRows.length}
@@ -844,12 +845,12 @@ export default function Cotizador() {
                             </div>
 
                             <div style={styles.notice}>
-                                <strong>Importante:</strong>{" "}
-                                para el Cotizador <strong>ml y cc son equivalentes</strong>.
-                                Solo entra al ranking una fuente configurada para la
-                                cantidad consultada. Si una tienda oculta el precio de
-                                la variante en JavaScript, podés guardar un precio manual
-                                de respaldo; queda marcado como manual y con fecha.
+                                <strong>Cómo se compara:</strong>{" "}
+                                se normalizan ml/cc y g/kg, y de cada
+                                proveedor se toma la presentación con
+                                menor costo unitario detectada hasta el
+                                máximo elegido. No incluye envío ni
+                                descuentos por forma de pago.
                             </div>
 
                             <div style={styles.card}>
@@ -863,18 +864,18 @@ export default function Cotizador() {
                                             <tr>
                                                 <th style={styles.th}>Puesto</th>
                                                 <th style={styles.th}>Proveedor</th>
-                                                <th style={styles.th}>Producto encontrado</th>
-                                                <th style={styles.th}>Presentación</th>
-                                                <th style={styles.th}>Precio publicado</th>
                                                 <th style={styles.th}>
-                                                    Costo / 100 {unit || ""}
+                                                    Mejor presentación
                                                 </th>
-                                                {desired > 0 && (
-                                                    <th style={styles.th}>
-                                                        Equivalente {formatQuantity(desired)}
-                                                        {unit ? ` ${unit}` : ""}
-                                                    </th>
-                                                )}
+                                                <th style={styles.th}>
+                                                    Precio publicado
+                                                </th>
+                                                <th style={styles.th}>
+                                                    Costo / 100 {webData.unit || unit}
+                                                </th>
+                                                <th style={styles.th}>
+                                                    Presentaciones detectadas
+                                                </th>
                                                 <th style={styles.th}>Estado</th>
                                                 <th style={styles.th}></th>
                                             </tr>
@@ -902,13 +903,9 @@ export default function Cotizador() {
                                                         </strong>
                                                         {row.rank === 1 && (
                                                             <div style={styles.bestText}>
-                                                                Más barato detectado
+                                                                Mejor precio unitario
                                                             </div>
                                                         )}
-                                                    </td>
-
-                                                    <td style={styles.td}>
-                                                        {row.product_name || "—"}
                                                     </td>
 
                                                     <td style={styles.td}>
@@ -921,7 +918,7 @@ export default function Cotizador() {
                                                                     {row.presentation_unit}
                                                                 </>
                                                             )
-                                                            : "No detectada"}
+                                                            : "—"}
                                                     </td>
 
                                                     <td style={styles.moneyTd}>
@@ -933,22 +930,21 @@ export default function Cotizador() {
                                                     <td style={styles.moneyTd}>
                                                         {row.normalized_cost !== null
                                                             && row.normalized_cost !== undefined
-                                                            ? formatMoney(
-                                                                row.normalized_cost
+                                                            ? (
+                                                                <strong>
+                                                                    {formatMoney(
+                                                                        row.normalized_cost
+                                                                    )}
+                                                                </strong>
                                                             )
                                                             : "—"}
                                                     </td>
 
-                                                    {desired > 0 && (
-                                                        <td style={styles.moneyTd}>
-                                                            {row.estimated_cost !== null
-                                                                && row.estimated_cost !== undefined
-                                                                ? formatMoney(
-                                                                    row.estimated_cost
-                                                                )
-                                                                : "—"}
-                                                        </td>
-                                                    )}
+                                                    <td style={styles.td}>
+                                                        {row.variants_count
+                                                            ? row.variants_count
+                                                            : "—"}
+                                                    </td>
 
                                                     <td style={styles.td}>
                                                         <Status row={row} />
@@ -978,428 +974,66 @@ export default function Cotizador() {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {webRows.some(
+                                    (row) =>
+                                        Array.isArray(row.variants)
+                                        && row.variants.length > 1
+                                ) && (
+                                    <details style={styles.details}>
+                                        <summary>
+                                            Ver presentaciones detectadas
+                                        </summary>
+
+                                        <div style={styles.variantGrid}>
+                                            {webRows.map((row) => (
+                                                <div
+                                                    key={`variants-${row.provider}`}
+                                                    style={styles.variantCard}
+                                                >
+                                                    <strong>
+                                                        {row.provider}
+                                                    </strong>
+
+                                                    {Array.isArray(row.variants)
+                                                    && row.variants.length > 0 ? (
+                                                        row.variants.map(
+                                                            (variant, index) => (
+                                                                <div
+                                                                    key={`${row.provider}-${index}`}
+                                                                    style={styles.variantLine}
+                                                                >
+                                                                    {formatQuantity(
+                                                                        variant.quantity
+                                                                    )}{" "}
+                                                                    {variant.unit}
+                                                                    {" — "}
+                                                                    {formatMoney(
+                                                                        variant.price
+                                                                    )}
+                                                                    {" — "}
+                                                                    {formatMoney(
+                                                                        variant.normalized_cost
+                                                                    )}
+                                                                    /100 {variant.unit}
+                                                                </div>
+                                                            )
+                                                        )
+                                                    ) : (
+                                                        <div style={styles.help}>
+                                                            Sin variantes confiables.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </details>
+                                )}
                             </div>
                         </>
                     )}
                 </>
             )}
-        </div>
-    );
-}
-
-
-function SourceConfiguration({
-    material,
-    quantity,
-    unit,
-    onClose,
-    onChanged
-}) {
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [message, setMessage] = useState("");
-    const [candidateLoading, setCandidateLoading] = useState("");
-    const [candidates, setCandidates] = useState({});
-
-    const sourceUnit = normalizedSourceUnit(unit);
-
-    useEffect(() => {
-        loadSources();
-    }, [material?.id, quantity, sourceUnit]);
-
-    function normalizedSourceUnit(value) {
-        const normalized = normalizeText(value);
-
-        if (
-            normalized === "ml"
-            || normalized === "cc"
-            || normalized.includes("mililit")
-        ) {
-            return "ml";
-        }
-
-        if (
-            normalized === "g"
-            || normalized.includes("gram")
-        ) {
-            return "g";
-        }
-
-        return normalized || "unidad";
-    }
-
-    async function loadSources() {
-        if (!material?.id || quantity <= 0) return;
-
-        setLoading(true);
-        setMessage("");
-
-        try {
-            const params = new URLSearchParams({
-                quantity: String(quantity),
-                unit: sourceUnit
-            });
-
-            const response = await fetch(
-                `${API}/supplier-quote-sources/${material.id}?${params.toString()}`
-            );
-            const data = await response.json();
-
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudieron cargar las fuentes."
-                );
-            }
-
-            setRows(
-                (data.results || []).map((row) => ({
-                    ...row,
-                    product_url: row.product_url || "",
-                    product_name: row.product_name || "",
-                    manual_price: row.manual_price ?? ""
-                }))
-            );
-        } catch (err) {
-            setMessage(
-                err.message || "No se pudieron cargar las fuentes."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    function updateRow(provider, field, value) {
-        setRows((current) =>
-            current.map((row) =>
-                row.provider === provider
-                    ? { ...row, [field]: value }
-                    : row
-            )
-        );
-    }
-
-    async function searchCandidates(row) {
-        setCandidateLoading(row.provider);
-        setMessage("");
-
-        try {
-            const params = new URLSearchParams({
-                provider: row.provider,
-                query: material.name || "",
-                unit: sourceUnit,
-                quantity: String(quantity)
-            });
-
-            const response = await fetch(
-                `${API}/supplier-source-candidates?${params.toString()}`
-            );
-            const data = await response.json();
-
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudieron buscar candidatos."
-                );
-            }
-
-            setCandidates((current) => ({
-                ...current,
-                [row.provider]: data.results || []
-            }));
-        } catch (err) {
-            setMessage(
-                err.message || "No se pudieron buscar candidatos."
-            );
-        } finally {
-            setCandidateLoading("");
-        }
-    }
-
-    async function saveRow(row) {
-        const url = String(row.product_url || "").trim();
-
-        if (!url) {
-            setMessage(
-                `Pegá o elegí la ficha correcta de ${row.provider}.`
-            );
-            return;
-        }
-
-        setMessage("");
-
-        try {
-            const response = await fetch(
-                `${API}/supplier-quote-sources/${material.id}`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        provider: row.provider,
-                        product_url: url,
-                        product_name:
-                            String(row.product_name || "").trim(),
-                        target_quantity: quantity,
-                        target_unit: sourceUnit,
-                        manual_price:
-                            row.manual_price === ""
-                                ? null
-                                : numberValue(row.manual_price)
-                    })
-                }
-            );
-
-            const data = await response.json();
-
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudo guardar la fuente."
-                );
-            }
-
-            setMessage(
-                `✓ ${row.provider}: fuente guardada para ${formatQuantity(quantity)} ${sourceUnit}.`
-            );
-            await loadSources();
-            onChanged?.();
-        } catch (err) {
-            setMessage(
-                err.message || "No se pudo guardar la fuente."
-            );
-        }
-    }
-
-    async function removeRow(row) {
-        if (!row.configured) return;
-
-        setMessage("");
-
-        try {
-            const params = new URLSearchParams({
-                quantity: String(quantity),
-                unit: sourceUnit
-            });
-
-            const response = await fetch(
-                `${API}/supplier-quote-sources/${material.id}/${encodeURIComponent(row.provider)}?${params.toString()}`,
-                { method: "DELETE" }
-            );
-            const data = await response.json();
-
-            if (!response.ok || data.error) {
-                throw new Error(
-                    data.error || "No se pudo quitar la fuente."
-                );
-            }
-
-            setMessage(`Fuente de ${row.provider} eliminada.`);
-            setCandidates((current) => ({
-                ...current,
-                [row.provider]: []
-            }));
-            await loadSources();
-            onChanged?.();
-        } catch (err) {
-            setMessage(err.message || "No se pudo quitar la fuente.");
-        }
-    }
-
-    if (loading) {
-        return (
-            <div style={styles.card}>
-                <strong>⚙️ Cargando fuentes...</strong>
-            </div>
-        );
-    }
-
-    return (
-        <div style={styles.card}>
-            <div style={styles.configHeader}>
-                <div>
-                    <h3 style={styles.cardTitle}>
-                        ⚙️ Fuentes de {material?.name}
-                    </h3>
-                    <p style={styles.explanation}>
-                        Configurando <strong>{formatQuantity(quantity)} {sourceUnit}</strong>.
-                        Para líquidos, 250 cc y 250 ml se guardan como la misma presentación.
-                    </p>
-                </div>
-
-                <button onClick={onClose}>
-                    Cerrar
-                </button>
-            </div>
-
-            {message && (
-                <div style={styles.configMessage}>
-                    {message}
-                </div>
-            )}
-
-            <div style={styles.sourceGrid}>
-                {rows.map((row) => (
-                    <div
-                        key={row.provider}
-                        style={styles.sourceCard}
-                    >
-                        <div style={styles.sourceTitleRow}>
-                            <strong>{row.provider}</strong>
-                            <span
-                                style={
-                                    row.configured
-                                        ? styles.okBadge
-                                        : styles.mutedBadge
-                                }
-                            >
-                                {row.configured
-                                    ? "✓ Configurada"
-                                    : "Sin configurar"}
-                            </span>
-                        </div>
-
-                        <label style={styles.smallLabel}>
-                            Ficha del producto
-                        </label>
-
-                        <input
-                            value={row.product_url}
-                            onChange={(event) =>
-                                updateRow(
-                                    row.provider,
-                                    "product_url",
-                                    event.target.value
-                                )
-                            }
-                            placeholder="https://..."
-                            style={styles.input}
-                        />
-
-                        <label style={styles.smallLabel}>
-                            Nombre en esa tienda
-                        </label>
-
-                        <input
-                            value={row.product_name}
-                            onChange={(event) =>
-                                updateRow(
-                                    row.provider,
-                                    "product_name",
-                                    event.target.value
-                                )
-                            }
-                            placeholder="Ej. Aceite Almendras Dulces"
-                            style={styles.input}
-                        />
-
-                        <label style={styles.smallLabel}>
-                            Precio manual de respaldo (opcional)
-                        </label>
-
-                        <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={row.manual_price}
-                            onChange={(event) =>
-                                updateRow(
-                                    row.provider,
-                                    "manual_price",
-                                    event.target.value
-                                )
-                            }
-                            placeholder={
-                                `Precio de ${formatQuantity(quantity)} ${sourceUnit}`
-                            }
-                            style={styles.input}
-                        />
-
-                        <div style={styles.help}>
-                            Usalo solo si la tienda oculta el precio de
-                            esta variante. Nativa intentará leerlo automáticamente primero.
-                        </div>
-
-                        <div style={styles.sourceActions}>
-                            <button
-                                onClick={() => searchCandidates(row)}
-                                disabled={
-                                    candidateLoading === row.provider
-                                }
-                            >
-                                {candidateLoading === row.provider
-                                    ? "Buscando..."
-                                    : "🔎 Buscar candidatos"}
-                            </button>
-
-                            <button onClick={() => saveRow(row)}>
-                                💾 Guardar
-                            </button>
-
-                            {row.configured && (
-                                <button
-                                    onClick={() => removeRow(row)}
-                                    style={styles.dangerButton}
-                                >
-                                    Quitar
-                                </button>
-                            )}
-                        </div>
-
-                        {(candidates[row.provider] || []).length > 0 && (
-                            <div style={styles.candidateBox}>
-                                <strong style={styles.candidateTitle}>
-                                    Posibles fichas
-                                </strong>
-
-                                {(candidates[row.provider] || []).map(
-                                    (candidate) => (
-                                        <div
-                                            key={candidate.url}
-                                            style={styles.candidateRow}
-                                        >
-                                            <div style={styles.candidateText}>
-                                                {candidate.title || candidate.url}
-                                            </div>
-
-                                            <div style={styles.candidateActions}>
-                                                <a
-                                                    href={candidate.url}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    Ver
-                                                </a>
-
-                                                <button
-                                                    onClick={() => {
-                                                        updateRow(
-                                                            row.provider,
-                                                            "product_url",
-                                                            candidate.url
-                                                        );
-                                                        updateRow(
-                                                            row.provider,
-                                                            "product_name",
-                                                            candidate.title || ""
-                                                        );
-                                                    }}
-                                                >
-                                                    Usar
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )
-                                )}
-                            </div>
-                        )}
-
-                        {row.updated_at && (
-                            <div style={styles.help}>
-                                Última configuración: {row.updated_at}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }
@@ -1423,49 +1057,6 @@ function Medal({ place }) {
 }
 
 function Status({ row }) {
-    if (row.status === "not_configured") {
-        return (
-            <div>
-                <span style={styles.mutedBadge}>
-                    ⚙️ Fuente sin configurar
-                </span>
-                <div style={styles.statusDetail}>
-                    Confirmá la ficha para esta presentación.
-                </div>
-            </div>
-        );
-    }
-
-    if (row.status === "manual" && row.normalized_cost !== null) {
-        return (
-            <div>
-                <span style={styles.warningBadge}>
-                    ✎ Precio manual
-                </span>
-                {row.updated_at && (
-                    <div style={styles.statusDetail}>
-                        Actualizado: {row.updated_at}
-                    </div>
-                )}
-            </div>
-        );
-    }
-
-    if (row.status === "needs_manual") {
-        return (
-            <div>
-                <span style={styles.warningBadge}>
-                    ⚠ Precio no legible
-                </span>
-                {row.message && (
-                    <div style={styles.statusDetail}>
-                        {row.message}
-                    </div>
-                )}
-            </div>
-        );
-    }
-
     if (row.status === "ok" && row.normalized_cost !== null) {
         return (
             <span style={styles.okBadge}>
@@ -1630,86 +1221,6 @@ const styles = {
         fontWeight: "bold",
         cursor: "pointer"
     },
-    actionButtons: {
-        display: "flex",
-        gap: 8,
-        flexWrap: "wrap"
-    },
-    configHeader: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        gap: 12,
-        flexWrap: "wrap"
-    },
-    configMessage: {
-        padding: "9px 11px",
-        borderRadius: 7,
-        background: "#f6f6f6",
-        marginBottom: 12,
-        fontSize: 13
-    },
-    sourceGrid: {
-        display: "grid",
-        gridTemplateColumns:
-            "repeat(auto-fit, minmax(280px, 1fr))",
-        gap: 12
-    },
-    sourceCard: {
-        border: "1px solid #ddd",
-        borderRadius: 9,
-        padding: 12,
-        background: "#fafafa"
-    },
-    sourceTitleRow: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 10
-    },
-    smallLabel: {
-        display: "block",
-        fontSize: 12,
-        fontWeight: "bold",
-        marginTop: 9,
-        marginBottom: 4
-    },
-    sourceActions: {
-        display: "flex",
-        gap: 7,
-        flexWrap: "wrap",
-        marginTop: 11
-    },
-    dangerButton: {
-        color: "#9a2222"
-    },
-    candidateBox: {
-        borderTop: "1px solid #ddd",
-        marginTop: 12,
-        paddingTop: 10
-    },
-    candidateTitle: {
-        fontSize: 12
-    },
-    candidateRow: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 8,
-        padding: "7px 0",
-        borderBottom: "1px solid #eee"
-    },
-    candidateText: {
-        fontSize: 12,
-        overflowWrap: "anywhere"
-    },
-    candidateActions: {
-        display: "flex",
-        gap: 7,
-        alignItems: "center",
-        flexShrink: 0
-    },
     cardTitle: {
         marginTop: 0,
         marginBottom: 6
@@ -1823,5 +1334,28 @@ const styles = {
         color: "#777",
         fontSize: 11,
         maxWidth: 240
+    },
+    details: {
+        marginTop: 14,
+        borderTop: "1px solid #eee",
+        paddingTop: 12
+    },
+    variantGrid: {
+        display: "grid",
+        gridTemplateColumns:
+            "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 10,
+        marginTop: 12
+    },
+    variantCard: {
+        border: "1px solid #e8e8e8",
+        borderRadius: 8,
+        padding: 10,
+        background: "#fafafa"
+    },
+    variantLine: {
+        fontSize: 12,
+        marginTop: 5,
+        color: "#555"
     }
 };
