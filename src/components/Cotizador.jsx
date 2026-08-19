@@ -151,6 +151,7 @@ export default function Cotizador() {
     const [webLoading, setWebLoading] = useState(false);
     const [webError, setWebError] = useState("");
     const [webData, setWebData] = useState(null);
+    const [minWebQuantity, setMinWebQuantity] = useState("100");
     const [maxWebQuantity, setMaxWebQuantity] = useState("500");
 
     useEffect(() => {
@@ -329,6 +330,11 @@ export default function Cotizador() {
             return;
         }
 
+        const minQuantity = Math.max(
+            numberValue(minWebQuantity),
+            0
+        );
+
         const maxQuantity = Math.max(
             numberValue(maxWebQuantity),
             0
@@ -341,6 +347,13 @@ export default function Cotizador() {
             return;
         }
 
+        if (minQuantity > maxQuantity) {
+            setWebError(
+                "La presentación mínima no puede ser mayor que la máxima."
+            );
+            return;
+        }
+
         setWebLoading(true);
         setWebError("");
         setWebData(null);
@@ -349,6 +362,7 @@ export default function Cotizador() {
             const params = new URLSearchParams({
                 query: selected.name || "",
                 unit: unit || "",
+                min_quantity: String(minQuantity),
                 max_quantity: String(maxQuantity)
             });
 
@@ -507,35 +521,63 @@ export default function Cotizador() {
                             </div>
                         </div>
                     ) : (
-                        <div>
-                            <label style={styles.label}>
-                                Máxima presentación a comparar
-                                {unit ? ` (${unit})` : ""}
-                            </label>
+                        <>
+                            <div>
+                                <label style={styles.label}>
+                                    Mínima presentación a comparar
+                                    {unit ? ` (${unit})` : ""}
+                                </label>
 
-                            <input
-                                type="number"
-                                min="1"
-                                step="any"
-                                value={maxWebQuantity}
-                                onChange={(event) => {
-                                    setMaxWebQuantity(
-                                        event.target.value
-                                    );
-                                    setWebData(null);
-                                    setWebError("");
-                                }}
-                                disabled={!selectedMaterial}
-                                style={styles.input}
-                            />
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={minWebQuantity}
+                                    onChange={(event) => {
+                                        setMinWebQuantity(
+                                            event.target.value
+                                        );
+                                        setWebData(null);
+                                        setWebError("");
+                                    }}
+                                    disabled={!selectedMaterial}
+                                    style={styles.input}
+                                />
 
-                            <div style={styles.help}>
-                                Por defecto 500. Nativa busca todas
-                                las presentaciones que detecte hasta
-                                ese tamaño y compara el precio por
-                                {unit === "ml" ? " ml" : " gramo"}.
+                                <div style={styles.help}>
+                                    Por defecto 100. Presentaciones menores
+                                    quedan fuera de la comparación.
+                                </div>
                             </div>
-                        </div>
+
+                            <div>
+                                <label style={styles.label}>
+                                    Máxima presentación a comparar
+                                    {unit ? ` (${unit})` : ""}
+                                </label>
+
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="any"
+                                    value={maxWebQuantity}
+                                    onChange={(event) => {
+                                        setMaxWebQuantity(
+                                            event.target.value
+                                        );
+                                        setWebData(null);
+                                        setWebError("");
+                                    }}
+                                    disabled={!selectedMaterial}
+                                    style={styles.input}
+                                />
+
+                                <div style={styles.help}>
+                                    Por defecto 500. Nativa compara solo
+                                    presentaciones dentro del rango elegido.
+                                </div>
+                            </div>
+                        </>
                     )}
                 </div>
             </div>
@@ -831,9 +873,11 @@ export default function Cotizador() {
                                     value={`por 100 ${webData.unit || unit}`}
                                 />
                                 <Summary
-                                    label="Máximo considerado"
+                                    label="Rango considerado"
                                     value={
                                         `${formatQuantity(
+                                            webData.min_quantity
+                                        )} a ${formatQuantity(
                                             webData.max_quantity
                                         )} ${webData.unit || unit}`
                                     }
@@ -848,8 +892,8 @@ export default function Cotizador() {
                                 <strong>Cómo se compara:</strong>{" "}
                                 se normalizan ml/cc y g/kg, y de cada
                                 proveedor se toma la presentación con
-                                menor costo unitario detectada hasta el
-                                máximo elegido. No incluye envío ni
+                                menor costo unitario detectada dentro del
+                                rango elegido. No incluye envío ni
                                 descuentos por forma de pago.
                             </div>
 
