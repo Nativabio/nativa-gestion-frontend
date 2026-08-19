@@ -579,6 +579,14 @@ function Dashboard() {
           detail="Acumulado histórico"
         />
 
+        {/* NATIVA_DASHBOARD_COMPRAS_TOTALES */}
+        <MetricCard
+          icon="🛍️"
+          title="Compras totales"
+          value={money(dashboard.purchases_total)}
+          detail="Acumulado histórico"
+        />
+
         {/* NATIVA_ALERTAS_STOCK_SEPARADAS */}
         <MetricCard
           icon="⚠️"
