@@ -10,6 +10,7 @@ import Accounting from "./components/Accounting";
 import Notes from "./components/Notes";
 import Cotizador from "./components/Cotizador";
 import DashboardRankings from "./components/DashboardRankings";
+import SupplierRanking from "./components/SupplierRanking";
 import {
   getStoredUsername,
   loginRequest,
@@ -589,6 +590,8 @@ function Dashboard() {
 
 
       <DashboardRankings />
+
+          <SupplierRanking />
 
       <div style={styles.dashboardSections}>
 
