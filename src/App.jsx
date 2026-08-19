@@ -579,11 +579,19 @@ function Dashboard() {
           detail="Acumulado histórico"
         />
 
+        {/* NATIVA_ALERTAS_STOCK_SEPARADAS */}
         <MetricCard
           icon="⚠️"
-          title="Alertas de stock"
-          value={dashboard.stock_alerts_total || 0}
-          detail="Materias primas y productos"
+          title="Alertas materias primas"
+          value={rawAlerts.length}
+          detail="Stock igual o menor al mínimo"
+        />
+
+        <MetricCard
+          icon="📦"
+          title="Alertas productos"
+          value={productAlerts.length}
+          detail="Stock de 5 unidades o menos"
         />
 
       </div>
