@@ -16,6 +16,8 @@ function isPackagingMaterial(item) {
     const name = normalizeText(material.name);
 
     return (
+        category.includes("packaging")
+        ||
         category.includes("envase")
         ||
         category.includes("etiqueta")
