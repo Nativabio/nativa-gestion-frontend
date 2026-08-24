@@ -17,6 +17,7 @@ export default function Purchases() {
 
     const [date, setDate] = useState(today);
     const [paymentMethod, setPaymentMethod] = useState("Caja");
+    const [shippingPaymentMethod, setShippingPaymentMethod] = useState("Caja");
     const [installmentsCount, setInstallmentsCount] = useState(1);
     const [shippingCost, setShippingCost] = useState(0);
     const [materials, setMaterials] = useState([]);
@@ -243,9 +244,14 @@ export default function Purchases() {
         0
     );
 
+    const cardBaseTotal =
+        shippingPaymentMethod === paymentMethod
+            ? purchaseTotal
+            : Math.max(purchaseTotal - shipping, 0);
+
     const installmentPreviewAmount =
         paymentMethod === "Tarjeta" && validInstallmentsCount > 0
-            ? purchaseTotal / validInstallmentsCount
+            ? cardBaseTotal / validInstallmentsCount
             : 0;
 
     function installmentDueDate(installmentNumber) {
@@ -253,7 +259,7 @@ export default function Purchases() {
 
         const baseDate = new Date(`${date}T12:00:00`);
         baseDate.setDate(
-            baseDate.getDate() + (30 * installmentNumber)
+            baseDate.getDate() + (30 * (installmentNumber - 1))
         );
 
         return baseDate.toLocaleDateString("es-AR");
@@ -274,6 +280,7 @@ export default function Purchases() {
         setInvoiceNumber("");
         setNotes("");
         setPaymentMethod("Caja");
+        setShippingPaymentMethod("Caja");
         setInstallmentsCount(1);
         setShippingCost(0);
         setDate(today);
@@ -313,6 +320,7 @@ export default function Purchases() {
         setNotes(purchase.notes || "");
         setDate(String(purchase.date || today).substring(0, 10));
         setPaymentMethod(purchase.payment_method || "Caja");
+        setShippingPaymentMethod(purchase.shipping_payment_method || "Caja");
         setInstallmentsCount(
             Number(purchase.installments_count || 0)
         );
@@ -448,6 +456,7 @@ export default function Purchases() {
                     ? validInstallmentsCount
                     : 0,
             shipping_cost: shipping,
+            shipping_payment_method: shippingPaymentMethod,
             notes,
             items: items.map((item) => ({
                 item_type: item.item_type,
@@ -501,7 +510,8 @@ export default function Purchases() {
                         invoice_number: payload.invoice_number,
                         date: payload.date,
                         payment_method: payload.payment_method,
-                        notes: payload.notes
+                        notes: payload.notes,
+                        shipping_payment_method: payload.shipping_payment_method
                     })
                 });
 
@@ -718,6 +728,26 @@ export default function Purchases() {
                         </div>
                     </div>
 
+                    <div>
+                        <label>Forma de pago del envío</label>
+                        <select
+                            value={shippingPaymentMethod}
+                            onChange={(event) =>
+                                setShippingPaymentMethod(event.target.value)
+                            }
+                            style={styles.input}
+                        >
+                            <option value="Caja">Efectivo / Caja</option>
+                            <option value="Banco">Transferencia / Banco</option>
+                            <option value="Mercado Pago">Mercado Pago</option>
+                            <option value="Tarjeta">Tarjeta de crédito</option>
+                            <option value="Proveedores">Cuenta corriente</option>
+                        </select>
+                        <div style={styles.helpText}>
+                            Puede ser distinto al medio de pago de la compra.
+                        </div>
+                    </div>
+
                     <div style={{ gridColumn: "1 / -1" }}>
                         <label>Observaciones</label>
                         <input
@@ -750,8 +780,8 @@ export default function Purchases() {
                                 Última exigible:{" "}
                                 {installmentDueDate(validInstallmentsCount)}
                                 {" · "}
-                                El sistema las pasa a Tarjeta de crédito
-                                a pagar cada 30 días.
+                                La primera queda exigible en la fecha de compra;
+                                las siguientes se habilitan cada 30 días.
                             </div>
                         </div>
                     )
