@@ -7,6 +7,7 @@ import Lots from "./components/Lots";
 import Suppliers from "./components/Suppliers";
 import Sales from "./components/Sales";
 import Accounting from "./components/Accounting";
+import Reportes from "./components/Reportes";
 import Notes from "./components/Notes";
 import Cotizador from "./components/Cotizador";
 import DashboardRankings from "./components/DashboardRankings";
@@ -214,6 +215,8 @@ function App() {
 
         <button onClick={() => setTab("accounting")}>💰 Contabilidad</button>
 
+        <button onClick={() => setTab("reports")}>📑 Reportes</button>
+
         <button onClick={() => setTab("notes")}>📝 Encargos / Ideas</button>
 
         <button onClick={() => setTab("settings")}>⚙️ Configuración</button>
@@ -241,6 +244,8 @@ function App() {
         {tab === "sales" && <Sales />}
 
         {tab === "accounting" && <Accounting />}
+
+        {tab === "reports" && <Reportes />}
 
         {tab === "notes" && <Notes />}
 
