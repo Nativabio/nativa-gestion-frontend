@@ -29,16 +29,9 @@ function normalizeText(value) {
         .toLowerCase();
 }
 
-function canonicalSupplier(value) {
-    const normalized = normalizeText(value);
-
-    const found = HABITUAL_SUPPLIERS.find((supplier) =>
-        supplier.matches.some((match) =>
-            normalized.includes(normalizeText(match))
-        )
-    );
-
-    return found ? found.name : null;
+function supplierDisplayName(value) {
+    const text = String(value || "").trim();
+    return text;
 }
 
 function numberValue(value) {
@@ -231,7 +224,7 @@ export default function Cotizador() {
         const rows = [];
 
         (purchases || []).forEach((purchase) => {
-            const supplier = canonicalSupplier(purchase.supplier);
+            const supplier = supplierDisplayName(purchase.supplier);
 
             if (!supplier) return;
 
@@ -283,41 +276,24 @@ export default function Cotizador() {
         const latestBySupplier = new Map();
 
         history.forEach((row) => {
-            if (!latestBySupplier.has(row.supplier)) {
-                latestBySupplier.set(row.supplier, row);
+            const key = normalizeText(row.supplier);
+
+            if (!key || latestBySupplier.has(key)) {
+                return;
             }
+
+            latestBySupplier.set(key, row);
         });
 
-        const withData = [];
-        const withoutData = [];
-
-        HABITUAL_SUPPLIERS.forEach((supplier) => {
-            const row = latestBySupplier.get(supplier.name);
-
-            if (row) {
-                withData.push({
-                    ...row,
-                    supplier: supplier.name,
-                    hasData: true
-                });
-            } else {
-                withoutData.push({
-                    supplier: supplier.name,
-                    hasData: false
-                });
-            }
-        });
-
-        withData.sort(
-            (a, b) => a.unitCost - b.unitCost
-        );
-
-        return [...withData, ...withoutData];
+        return Array.from(latestBySupplier.values())
+            .sort((a, b) => a.unitCost - b.unitCost)
+            .map((row) => ({
+                ...row,
+                hasData: true
+            }));
     }, [history]);
 
-    const availableRanking = ranking.filter(
-        (row) => row.hasData
-    );
+    const availableRanking = ranking;
 
     const desired = Math.max(
         numberValue(desiredQuantity),
@@ -618,8 +594,7 @@ export default function Cotizador() {
                     {availableRanking.length === 0 ? (
                         <div style={styles.empty}>
                             Todavía no hay compras registradas de{" "}
-                            <strong>{selected?.name}</strong>
-                            {" "}en tus cuatro proveedores habituales.
+                            <strong>{selected?.name}</strong>.
                         </div>
                     ) : (
                         <div style={styles.card}>
