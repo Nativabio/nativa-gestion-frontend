@@ -1437,21 +1437,52 @@ export default function Accounting() {
         );
 
 
-    let runningLedgerBalance = 0;
+    // Saldo acumulado anterior al período seleccionado.
+    // Se calcula con todos los movimientos de la cuenta anteriores a ledgerFrom.
+    const ledgerPreviousMovements = journal
+        .filter(
+            (movement) =>
+                selectedLedgerAccount &&
+                movement.account_code
+                ===
+                selectedLedgerAccount.code &&
+                (!ledgerFrom ||
+                    String(movement.date || "").substring(0, 10) < ledgerFrom)
+        );
+
+
+    const ledgerCreditNature = selectedLedgerAccount &&
+        [
+            "PASIVO",
+            "PATRIMONIO",
+            "INGRESO"
+        ].includes(
+            selectedLedgerAccount.type
+        );
+
+
+    const ledgerPreviousBalance = ledgerPreviousMovements.reduce(
+        (balance, movement) => {
+            if (ledgerCreditNature) {
+                return balance
+                    + Number(movement.credit || 0)
+                    - Number(movement.debit || 0);
+            }
+
+            return balance
+                + Number(movement.debit || 0)
+                - Number(movement.credit || 0);
+        },
+        0
+    );
+
+
+    let runningLedgerBalance = ledgerPreviousBalance;
 
     const ledgerRows = ledgerMovements.map(
         (movement) => {
 
-            const creditNature = selectedLedgerAccount &&
-                [
-                    "PASIVO",
-                    "PATRIMONIO",
-                    "INGRESO"
-                ].includes(
-                    selectedLedgerAccount.type
-                );
-
-            if (creditNature) {
+            if (ledgerCreditNature) {
 
                 runningLedgerBalance +=
                     Number(movement.credit || 0)
@@ -3259,6 +3290,36 @@ export default function Accounting() {
                                         </thead>
 
                                         <tbody>
+
+                                            {/* El Mayor siempre comienza con el saldo acumulado anterior. */}
+                                            <tr key="ledger-opening-balance">
+
+                                                <td style={cellStyle}>
+                                                    {ledgerFrom
+                                                        ? `Anterior al ${ledgerFrom}`
+                                                        : "Anterior"}
+                                                </td>
+
+                                                <td style={{
+                                                    ...cellStyle,
+                                                    fontWeight: "bold"
+                                                }}>
+                                                    SALDO ANTERIOR
+                                                </td>
+
+                                                <td style={cellStyle}></td>
+                                                <td style={cellStyle}></td>
+
+                                                <td style={{
+                                                    ...cellStyle,
+                                                    fontWeight: "bold"
+                                                }}>
+                                                    ${formatMoney(
+                                                        ledgerPreviousBalance
+                                                    )}
+                                                </td>
+
+                                            </tr>
 
                                             {
 
